@@ -150,14 +150,14 @@ export function ThemeToggle() {
 
 type McpClient = { id: string; label: string; hint: string; snippet: (url: string) => string };
 
-const json = (key: string, url: string) => JSON.stringify({ mcpServers: { offshoot: { [key]: url } } }, null, 2);
+const json = (key: string, url: string) => JSON.stringify({ mcpServers: { reskill: { [key]: url } } }, null, 2);
 
 const MCP_CLIENTS: McpClient[] = [
-  { id: "claude", label: "Claude Code", hint: "Run in your terminal, then sign in when asked.", snippet: (u) => `claude mcp add --transport http offshoot ${u}` },
-  { id: "codex", label: "Codex", hint: "Run in your terminal, then sign in when asked.", snippet: (u) => `codex mcp add offshoot --url ${u}` },
-  { id: "gemini", label: "Gemini CLI", hint: "Run in your terminal, then sign in when asked.", snippet: (u) => `gemini mcp add --transport http offshoot ${u}` },
+  { id: "claude", label: "Claude Code", hint: "Run in your terminal, then sign in when asked.", snippet: (u) => `claude mcp add --transport http reskill ${u}` },
+  { id: "codex", label: "Codex", hint: "Run in your terminal, then sign in when asked.", snippet: (u) => `codex mcp add reskill --url ${u}` },
+  { id: "gemini", label: "Gemini CLI", hint: "Run in your terminal, then sign in when asked.", snippet: (u) => `gemini mcp add --transport http reskill ${u}` },
   { id: "cursor", label: "Cursor", hint: "Add to ~/.cursor/mcp.json, then sign in when asked.", snippet: (u) => json("url", u) },
-  { id: "vscode", label: "VS Code", hint: "Run in your terminal, then sign in when asked.", snippet: (u) => `code --add-mcp '${JSON.stringify({ name: "offshoot", type: "http", url: u })}'` },
+  { id: "vscode", label: "VS Code", hint: "Run in your terminal, then sign in when asked.", snippet: (u) => `code --add-mcp '${JSON.stringify({ name: "reskill", type: "http", url: u })}'` },
   { id: "antigravity", label: "Antigravity", hint: "Add to mcp_config.json (Agent panel, MCP Servers, Manage, View raw config).", snippet: (u) => json("serverUrl", u) },
   { id: "other", label: "Other", hint: "Add a remote (streamable HTTP) MCP server with this URL.", snippet: (u) => u },
 ];
@@ -230,17 +230,17 @@ export function Header({ title, right }: { title?: string; right?: ReactNode }) 
       <Link
         to="/"
         className="group flex min-w-0 items-center gap-2.5 rounded-lg py-1 pr-2 text-base font-semibold tracking-snug"
-        aria-label={title ? `Offshoot home, ${title}` : "Offshoot home"}
+        aria-label={title ? `reSkill home, ${title}` : "reSkill home"}
       >
         <span className="size-3.75 shrink-0 rounded-full bg-ink transition-transform duration-300 group-hover:scale-110" />
         <motion.span
-          key={title ?? "Offshoot"}
+          key={title ?? "reSkill"}
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35, ease: EASE }}
           className="truncate whitespace-nowrap"
         >
-          {title ?? "Offshoot"}
+          {title ?? "reSkill"}
         </motion.span>
       </Link>
       <nav aria-label="Main" className="flex shrink-0 items-center gap-1 whitespace-nowrap sm:gap-2">

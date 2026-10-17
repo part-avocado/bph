@@ -112,7 +112,12 @@ const MAX_QUESTIONS = 6;
  * questions as they stand after the write, read in the same D1 batch.
  */
 export async function planQuestions(env: Env, project: ProjectRow, opts: { keepNext?: boolean; existing?: Question[] } = {}) {
-  const [, existing] = await Promise.all([ensureDigest(env, project), opts.existing ?? getQuestions(env.DB, project.id)]);
+  // A digest the model can't produce (say it rejects an attachment) must not block the questions;
+  // plan from the idea alone and let a later call try the attachments again.
+  const [, existing] = await Promise.all([
+    ensureDigest(env, project).catch((err) => console.error("digest failed", err)),
+    opts.existing ?? getQuestions(env.DB, project.id),
+  ]);
   const settled = existing.filter((q) => q.answer !== null || q.skipped);
   // The browser may already be showing the next question; keep it stable.
   const pinned = opts.keepNext ? existing.find((q) => q.answer === null && !q.skipped) : undefined;

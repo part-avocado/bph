@@ -5,15 +5,16 @@ import { Button, CheckIcon, Sep, CmdIcon, EnterIcon, EASE, ErrorText, HintBar, K
 import type { Api } from "../lib/api";
 import { isMac, isTyping, useKeys } from "../lib/keys";
 import { navigate } from "../lib/router";
+import { getSession, setSession } from "../lib/session";
 
 /** Reveals the prompt line by line the first time it's shown. */
 function useReveal(text: string, key: string) {
-  const seenKey = `offshoot:seen:${key}`;
+  const seenKey = `reskill:seen:${key}`;
   const lines = text.split("\n");
-  const [shown, setShown] = useState(() => (sessionStorage.getItem(seenKey) ? lines.length : 0));
+  const [shown, setShown] = useState(() => (getSession(seenKey) ? lines.length : 0));
   useEffect(() => {
     if (shown >= lines.length) {
-      sessionStorage.setItem(seenKey, "1");
+      setSession(seenKey, "1");
       return;
     }
     const step = Math.max(1, Math.ceil(lines.length / 45));

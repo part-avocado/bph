@@ -23,11 +23,24 @@ export function useRun(runId: string, getToken: () => Promise<string | null>) {
     setLog([]);
     setConnection("connecting");
 
+    // Same backoff whether the token fetch or the socket itself failed.
+    function retry() {
+      setConnection("reconnecting");
+      timer = setTimeout(connect, Math.min(8000, 400 * 2 ** attempt++));
+    }
+
     async function connect() {
-      const token = await tokenRef.current();
+      let token: string | null = null;
+      try {
+        token = await tokenRef.current();
+      } catch {
+        // Clerk couldn't refresh the session (offline, say); try again below.
+      }
       if (closed) return;
+      if (!token) return retry();
       const proto = location.protocol === "https:" ? "wss" : "ws";
-      const socket = new WebSocket(`${proto}://${location.host}/api/runs/${runId}/ws?token=${encodeURIComponent(token ?? "")}`);
+      // The token travels as a subprotocol, not in the URL, so it never lands in request logs.
+      const socket = new WebSocket(`${proto}://${location.host}/api/runs/${runId}/ws`, ["bearer", token]);
       ws.current = socket;
       socket.onopen = () => {
         attempt = 0;
@@ -48,8 +61,7 @@ export function useRun(runId: string, getToken: () => Promise<string | null>) {
       };
       socket.onclose = () => {
         if (closed || ws.current !== socket) return;
-        setConnection("reconnecting");
-        timer = setTimeout(connect, Math.min(8000, 400 * 2 ** attempt++));
+        retry();
       };
     }
     void connect();

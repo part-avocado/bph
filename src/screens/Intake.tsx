@@ -501,7 +501,7 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
             >
               <h2 className="text-center text-title font-semibold tracking-display">That's everything.</h2>
               <p className="mt-2 text-center text-base text-pretty text-mute">
-                {realAnswers} answer{realAnswers === 1 ? "" : "s"}{answeredCount > realAnswers ? `, ${answeredCount - realAnswers} left for Offshoot to decide` : ""}. Reviewers will draft, challenge and merge your prompt next.
+                {realAnswers} answer{realAnswers === 1 ? "" : "s"}{answeredCount > realAnswers ? `, ${answeredCount - realAnswers} left for reSkill to decide` : ""}. Reviewers will draft, challenge and merge your prompt next.
               </p>
               <ul className="card mt-7 divide-y divide-line-2 overflow-hidden p-0" aria-label="Your answers">
                 {view.map((q) => (

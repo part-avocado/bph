@@ -12,7 +12,7 @@
 - Not done: audience (`aud`) binding, because it depends on what Clerk puts in OAuth access tokens; verify in the Clerk Dashboard.
 
 ## Goal
-Let an agent (Claude Code, Codex, Cursor, claude.ai) connect to Offshoot over MCP, sign in as the user through Clerk's OAuth flow, and drive the whole skill-creation pipeline that the web UI drives today: describe idea -> confirm summary -> answer questions -> run the multi-agent build -> fetch the finished build prompt (and improve it).
+Let an agent (Claude Code, Codex, Cursor, claude.ai) connect to reSkill over MCP, sign in as the user through Clerk's OAuth flow, and drive the whole skill-creation pipeline that the web UI drives today: describe idea -> confirm summary -> answer questions -> run the multi-agent build -> fetch the finished build prompt (and improve it).
 
 ## Interpretation
 "Clerk Agents auth" = Clerk acting as the OAuth 2.1 authorization server for MCP clients (CIMD/DCR + PKCE, consent screen). The Worker is the MCP resource server and only verifies Clerk OAuth access tokens. No custom token issuance.
@@ -36,7 +36,7 @@ Extract the business logic out of `worker/index.ts` route handlers into `worker/
 6. `answer_question` {id, questionId, answer?} - empty/skip allowed; `replan` default true.
 7. `start_build` {id, improve?} - starts the run (same limits); returns runId.
 8. `get_build` {id} - run status/score/round from the Durable Object `getState()` plus latest prompt body when done. Agents poll (no websocket).
-9. `get_skill_prompt` {id, version?} - the finished build prompt body, for the agent to hand to its own coding step. Also exposed as a resource `offshoot://skills/{id}/prompt`.
+9. `get_skill_prompt` {id, version?} - the finished build prompt body, for the agent to hand to its own coding step. Also exposed as a resource `reskill://skills/{id}/prompt`.
 Annotations: read tools `readOnlyHint`, `delete` not exposed (v1 is non-destructive). Tool errors return `isError` with user-facing messages, never raw exceptions.
 
 ## Data/migration
@@ -48,7 +48,7 @@ Annotations: read tools `readOnlyHint`, `delete` not exposed (v1 is non-destruct
 - Clerk Dashboard (manual, documented in README): enable OAuth applications, Publish CIMD (and DCR for clients lacking CIMD), default scopes `profile email`.
 
 ## UI touch (small)
-README section "Connect an agent" with `claude mcp add --transport http offshoot https://<host>/mcp`. Optional: a "Connect an agent" snippet card in the History screen (copyable command). Keep out of v1 if it grows.
+README section "Connect an agent" with `claude mcp add --transport http reskill https://<host>/mcp`. Optional: a "Connect an agent" snippet card in the History screen (copyable command). Keep out of v1 if it grows.
 
 ## Verification
 - `npm run typecheck` and `npm run build` clean.
@@ -57,7 +57,7 @@ README section "Connect an agent" with `claude mcp add --transport http offshoot
 - Existing web routes regression-checked via typecheck + manual curl of `/api/health`.
 
 ## Out of scope (v1)
-Attachments over MCP, deleting skills, websocket streaming of runs, steering/pausing runs, MCP *client* connections (Offshoot calling other MCP servers), per-tool OAuth scopes.
+Attachments over MCP, deleting skills, websocket streaming of runs, steering/pausing runs, MCP *client* connections (reSkill calling other MCP servers), per-tool OAuth scopes.
 
 ## Risks / open questions
 - `@clerk/mcp-tools` `/hono` pulls `@clerk/hono` + `@modelcontextprotocol/sdk` (large; check Worker bundle size and nodejs_compat compatibility).

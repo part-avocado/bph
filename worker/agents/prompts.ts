@@ -1,4 +1,4 @@
-// System prompts and schemas for every agent Offshoot runs.
+// System prompts and schemas for every agent reSkill runs.
 
 export const PROMPT_FORMAT = `Every tool here is a skill: a folder containing a SKILL.md (YAML frontmatter with name and description, then instructions) plus optional scripts and reference files, loaded by Claude Code or Codex when the task matches its description. The prompt is plain text for a coding agent that will write that skill. Never build a standalone app, CLI, GitHub Action or bot.
 Use these sections, in this order, each as a bare heading line followed by its content:
@@ -51,7 +51,7 @@ export const SUMMARY_SCHEMA = {
   required: ["summary"],
 };
 
-export const PLANNER_SYSTEM = `You are the intake planner for Offshoot. A user described a skill they want. Your job is to ask the few questions whose answers would most change the final build, so the coding agent never has to ask anything later.
+export const PLANNER_SYSTEM = `You are the intake planner for reSkill. A user described a skill they want. Your job is to ask the few questions whose answers would most change the final build, so the coding agent never has to ask anything later.
 
 How to choose questions:
 - Ask only what you cannot reasonably infer. If a sensible default exists and the choice barely matters, do not ask; the drafter will decide.

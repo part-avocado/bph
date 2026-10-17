@@ -6,6 +6,7 @@ import { useApi } from "../lib/api";
 import { ACCEPT, filesFromDrop, formatBytes, isSupported } from "../lib/files";
 import { isMac } from "../lib/keys";
 import { navigate } from "../lib/router";
+import { getSession, removeSession, setSession } from "../lib/session";
 
 const EXAMPLES: [string, string][] = [
   ["Changelog writer", "A skill that turns git history into release notes"],
@@ -13,7 +14,7 @@ const EXAMPLES: [string, string][] = [
   ["Commit helper", "A skill that writes conventional commit messages from my staged changes"],
 ];
 
-const PENDING_KEY = "offshoot:pending-idea";
+const PENDING_KEY = "reskill:pending-idea";
 
 const word: Variants = {
   hidden: { opacity: 0, y: 14, filter: "blur(10px)" },
@@ -50,7 +51,7 @@ export function Describe() {
   const api = useApi();
   const { isSignedIn, isLoaded } = useAuth();
   const clerk = useClerk();
-  const [idea, setIdea] = useState(() => sessionStorage.getItem(PENDING_KEY) ?? "");
+  const [idea, setIdea] = useState(() => getSession(PENDING_KEY) ?? "");
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,8 +68,8 @@ export function Describe() {
 
   // Keep the idea safe across a sign-in redirect.
   useEffect(() => {
-    if (idea) sessionStorage.setItem(PENDING_KEY, idea);
-    else sessionStorage.removeItem(PENDING_KEY);
+    if (idea) setSession(PENDING_KEY, idea);
+    else removeSession(PENDING_KEY);
   }, [idea]);
 
   // Grow the textarea with its content, and re-measure when its width changes.
@@ -103,7 +104,7 @@ export function Describe() {
     setError(null);
     try {
       const { project } = await api.createProject(text, files);
-      sessionStorage.removeItem(PENDING_KEY);
+      removeSession(PENDING_KEY);
       navigate(`/p/${project.id}`);
     } catch (err) {
       setError((err as Error).message);

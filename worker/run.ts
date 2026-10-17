@@ -12,7 +12,7 @@ import {
   criticSystem,
 } from "./agents/prompts";
 import { newId, now } from "./db";
-import { generate, generateStream, parseJson, userText, type GenerateResult } from "./gemini";
+import { GeminiError, generate, generateStream, parseJson, userText, type GenerateResult } from "./gemini";
 
 export interface RunConfig {
   runId: string;
@@ -59,7 +59,17 @@ function lineDiff(before: string, after: string) {
   return { added, removed };
 }
 
+/** What the browser may see about a failure. The provider's response body stays in the server logs. */
+function publicError(err: unknown, max: number) {
+  console.error("run step failed", err);
+  if (err instanceof GeminiError) {
+    return err.status === 400 ? "The model declined this request." : "The model is busy or unavailable right now.";
+  }
+  return (err instanceof Error ? err.message : String(err)).slice(0, max);
+}
+
 export class RunObject extends DurableObject<Env> {
+  private cancelled = false;
   private state: RunState | null = null;
   private config: RunConfig | null = null;
   private draft: Draft | null = null;
@@ -82,6 +92,7 @@ export class RunObject extends DurableObject<Env> {
   }
 
   private async save() {
+    if (this.cancelled) return;
     await this.ctx.storage.put({ state: this.state, draft: this.draft, verdict: this.verdict });
   }
 
@@ -121,6 +132,27 @@ export class RunObject extends DurableObject<Env> {
     return this.state;
   }
 
+  /** Stops the run and erases everything it stored. Used when its project or user is deleted. */
+  async cancel() {
+    this.cancelled = true;
+    if (this.broadcastTimer) clearTimeout(this.broadcastTimer);
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        ws.close(1000, "run deleted");
+      } catch {
+        // already closed
+      }
+    }
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+    this.state = this.config = this.draft = this.verdict = this.logLines = null;
+  }
+
+  /** A step already waiting on the model can't be aborted, but it must not carry on once cancelled. */
+  private assertLive() {
+    if (this.cancelled) throw new Error("This run was deleted.");
+  }
+
   // ---------- websocket ----------
 
   async fetch(request: Request) {
@@ -131,7 +163,8 @@ export class RunObject extends DurableObject<Env> {
     if (this.state) pair[1].send(JSON.stringify({ type: "state", state: this.state } satisfies ServerEvent));
     if (this.draft) pair[1].send(JSON.stringify(this.draftEvent()));
     pair[1].send(JSON.stringify({ type: "log", lines: this.logLines ?? [], replace: true } satisfies ServerEvent));
-    return new Response(null, { status: 101, webSocket: pair[0] });
+    // The browser sends its token as a second subprotocol (see requireUser); it requires one to be echoed back.
+    return new Response(null, { status: 101, webSocket: pair[0], headers: { "Sec-WebSocket-Protocol": "bearer" } });
   }
 
   async webSocketMessage(_ws: WebSocket, message: string | ArrayBuffer) {
@@ -217,6 +250,7 @@ export class RunObject extends DurableObject<Env> {
   }
 
   private async log(source: string, text: string) {
+    if (this.cancelled) return;
     const line: LogLine = { t: now(), source, text };
     const log = this.logLines ?? ((await this.ctx.storage.get<LogLine[]>("log")) ?? []);
     log.push(line);
@@ -236,7 +270,7 @@ export class RunObject extends DurableObject<Env> {
       await this.step();
     } catch (err) {
       s.status = "failed";
-      s.error = (err as Error).message.slice(0, 300);
+      s.error = publicError(err, 300);
       s.next = null;
       for (const a of s.agents) if (a.status === "working" || a.status === "starting") a.status = "failed";
       await this.log("orchestrator", `stopped: ${s.error}`);
@@ -331,6 +365,7 @@ export class RunObject extends DurableObject<Env> {
   }
 
   private async commitDraft(body: string, parentId: string | null) {
+    this.assertLive();
     const s = this.state!;
     const version = (this.draft?.version ?? 0) + 1;
     this.draft = { id: newId(), version, body: body.trim(), score: null };
@@ -430,6 +465,7 @@ export class RunObject extends DurableObject<Env> {
     const s = this.state!;
     const base = this.draft!;
     const plan = await this.planRound();
+    this.assertLive();
     const critics = plan.map(({ lens }) => this.newAgent("critic", `Critic · ${CRITIC_LENSES[lens].label}`, `critic/${lens}`));
     const refinerTask = s.agents.length + 1;
     s.next = { task: refinerTask, label: `Refiner · round ${s.round}`, reason: "Waiting on the active reviews" };
@@ -460,7 +496,7 @@ export class RunObject extends DurableObject<Env> {
         } catch (err) {
           agent.status = "failed";
           agent.note = "review failed, branch dropped";
-          await this.log(agent.branch, `failed: ${(err as Error).message.slice(0, 160)}`);
+          await this.log(agent.branch, `failed: ${publicError(err, 160)}`);
           return null;
         } finally {
           this.broadcast({ type: "state", state: s }, true);
@@ -468,6 +504,7 @@ export class RunObject extends DurableObject<Env> {
       }),
     );
 
+    this.assertLive();
     const ok = branches.filter((b): b is NonNullable<typeof b> => !!b && b.revised.trim().length > 0);
     if (!ok.length) throw new Error("Every review in this round failed.");
 

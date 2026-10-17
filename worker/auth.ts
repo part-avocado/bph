@@ -49,15 +49,22 @@ export async function verifyClerkToken(env: Env, token: string | null | undefine
   return sub;
 }
 
+/** The token a browser WebSocket sends as the subprotocols "bearer, <token>" (the only header it can set). */
+function socketToken(protocols: string | undefined) {
+  const list = protocols?.split(",").map((s) => s.trim()) ?? [];
+  const i = list.indexOf("bearer");
+  return i >= 0 ? list[i + 1] : undefined;
+}
+
 /**
  * Requires a Clerk session. Browsers send it as a bearer token; WebSocket
- * upgrades can't set headers, so they pass it as ?token= instead.
+ * upgrades can't set an Authorization header, so they pass it in the
+ * Sec-WebSocket-Protocol header. Not the URL: request URLs end up in logs.
  */
 export const requireUser = createMiddleware<AppEnv>(async (c, next) => {
   const header = c.req.header("Authorization");
-  // Only accept the query-string token on WebSocket upgrades so it never ends up in ordinary request URLs.
   const isUpgrade = c.req.header("Upgrade")?.toLowerCase() === "websocket";
-  const token = header?.startsWith("Bearer ") ? header.slice(7) : isUpgrade ? c.req.query("token") : undefined;
+  const token = header?.startsWith("Bearer ") ? header.slice(7) : isUpgrade ? socketToken(c.req.header("Sec-WebSocket-Protocol")) : undefined;
   const userId = await verifyClerkToken(c.env, token);
   if (!userId) return c.json({ error: "Sign in to continue." }, 401);
   c.set("userId", userId);

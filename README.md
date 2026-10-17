@@ -1,4 +1,4 @@
-# Offshoot
+# reSkill
 
 Turns an idea into a finished build prompt for a Claude Code / Codex skill.
 
@@ -7,7 +7,7 @@ Turns an idea into a finished build prompt for a Claude Code / Codex skill.
 Agents can drive the whole flow over MCP. Clerk is the OAuth server, so the agent signs the user in through a normal consent screen and acts only on that user's skills.
 
 ```sh
-claude mcp add --transport http offshoot https://<your-host>/mcp
+claude mcp add --transport http reskill https://<your-host>/mcp
 ```
 
 Tools: `list_skills`, `create_skill`, `get_skill`, `review_summary`, `answer_question`, `start_build`, `get_build`. The flow is create, confirm the summary, answer the questions, start the build, then poll `get_build` for the prompt.

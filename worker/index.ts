@@ -20,7 +20,7 @@ import {
 import { GeminiError } from "./gemini";
 import { isInlineMime, planQuestions, summarizeIdea } from "./intake";
 import { mcpApp } from "./mcp";
-import { answerQuestion, loadIntake, startRun, toIntakeState } from "./service";
+import { MODEL_CALL_LIMIT, PROJECT_LIMIT, answerQuestion, loadIntake, projectLimitReached, spendModelCall, startRun, toIntakeState } from "./service";
 
 export { RunObject } from "./run";
 
@@ -44,6 +44,8 @@ app.onError((err, c) => {
 });
 
 app.get("/health", (c) => c.json({ ok: true }));
+
+const modelLimitError = `You've used today's ${MODEL_CALL_LIMIT} planning steps. They refill over the next 24 hours.`;
 
 // ---- Clerk webhook: keep users in sync, delete data when a user is deleted ----
 app.post("/webhooks/clerk", async (c) => {
@@ -69,15 +71,21 @@ app.post("/webhooks/clerk", async (c) => {
   return c.json({ ok: true });
 });
 
+/** Stops runs and wipes what their Durable Objects stored (the brief, drafts, log). One failure doesn't block the rest. */
+async function cancelRuns(env: Env, runIds: string[]) {
+  const outcomes = await Promise.allSettled(runIds.map((id) => env.RUN.get(env.RUN.idFromName(id)).cancel()));
+  for (const o of outcomes) if (o.status === "rejected") console.error("run cleanup failed", o.reason);
+}
+
 async function deleteUserData(env: Env, userId: string) {
-  const { results } = await env.DB.prepare(
-    "SELECT a.r2_key FROM attachments a JOIN projects p ON p.id = a.project_id WHERE p.user_id = ?",
-  )
-    .bind(userId)
-    .all<{ r2_key: string }>();
+  const [files, runs] = await env.DB.batch([
+    env.DB.prepare("SELECT a.r2_key FROM attachments a JOIN projects p ON p.id = a.project_id WHERE p.user_id = ?").bind(userId),
+    env.DB.prepare("SELECT id FROM runs WHERE user_id = ?").bind(userId),
+  ]);
+  const results = files.results as { r2_key: string }[];
   const chunks: Promise<void>[] = [];
   for (let i = 0; i < results.length; i += 1000) chunks.push(env.UPLOADS.delete(results.slice(i, i + 1000).map((r) => r.r2_key)));
-  await Promise.all(chunks);
+  await Promise.all([...chunks, cancelRuns(env, (runs.results as { id: string }[]).map((r) => r.id))]);
   await env.DB.batch([
     env.DB.prepare("DELETE FROM runs WHERE user_id = ?").bind(userId),
     env.DB.prepare("DELETE FROM run_starts WHERE user_id = ?").bind(userId),
@@ -123,8 +131,12 @@ app.post("/projects", async (c) => {
   }
   if (total > MAX_TOTAL_BYTES) return c.json({ error: "Attachments are over 12 MB in total." }, 400);
 
-  const id = newId();
   const userId = c.get("userId");
+  if (await projectLimitReached(c.env, userId)) {
+    return c.json({ error: `You've created ${PROJECT_LIMIT} skills in the last 24 hours. Try again tomorrow.` }, 429);
+  }
+
+  const id = newId();
   const t = now();
   const title = idea.split(/\s+/).slice(0, 4).join(" ");
   const stmts = [
@@ -190,12 +202,15 @@ app.get("/projects/:id", async (c) => {
 app.delete("/projects/:id", async (c) => {
   const row = await getProjectRow(c.env.DB, c.req.param("id"), c.get("userId"));
   if (!row) return c.json({ error: "Not found" }, 404);
-  const [attachments] = await c.env.DB.batch([
+  const [attachments, runs] = await c.env.DB.batch([
     c.env.DB.prepare("SELECT r2_key FROM attachments WHERE project_id = ?").bind(row.id),
+    c.env.DB.prepare("SELECT id FROM runs WHERE project_id = ?").bind(row.id),
     c.env.DB.prepare("DELETE FROM runs WHERE project_id = ?").bind(row.id),
     c.env.DB.prepare("DELETE FROM projects WHERE id = ?").bind(row.id),
   ]);
   const keys = (attachments.results as { r2_key: string }[]).map((r) => r.r2_key);
+  // A build in progress must stop spending tokens, whether or not the browser is still connected.
+  c.executionCtx.waitUntil(cancelRuns(c.env, (runs.results as { id: string }[]).map((r) => r.id)));
   // The rows are gone; clearing the files from R2 doesn't need to hold up the response.
   if (keys.length) c.executionCtx.waitUntil(c.env.UPLOADS.delete(keys).catch((err) => console.error("R2 cleanup failed", err)));
   return c.json({ ok: true });
@@ -207,10 +222,14 @@ app.post("/projects/:id/plan", async (c) => {
   if (!row) return c.json({ error: "Not found" }, 404);
   // Nothing is asked until the user has agreed with the model's paraphrase of the idea.
   if (!row.summary_confirmed) {
-    if (!row.summary) await summarizeIdea(c.env, row);
+    if (!row.summary) {
+      if (!(await spendModelCall(c.env, row.user_id))) return c.json({ error: modelLimitError }, 429);
+      await summarizeIdea(c.env, row);
+    }
     return c.json(toIntakeState(row, questions));
   }
   if (!questions.length && !row.intake_complete) {
+    if (!(await spendModelCall(c.env, row.user_id))) return c.json({ error: modelLimitError }, 429);
     const planned = await planQuestions(c.env, row, { existing: questions });
     return c.json(toIntakeState(planned.row, planned.questions));
   }
@@ -225,6 +244,7 @@ app.post("/projects/:id/summary", async (c) => {
   const body = await c.req.json<{ guidance?: unknown }>().catch(() => null);
   const guidance = typeof body?.guidance === "string" ? body.guidance.trim().slice(0, 1000) : "";
   if (!guidance) return c.json({ error: "Tell us what to change." }, 400);
+  if (!(await spendModelCall(c.env, row.user_id))) return c.json({ error: modelLimitError }, 429);
   await summarizeIdea(c.env, row, guidance);
   return c.json(toIntakeState(row, questions));
 });
@@ -234,6 +254,8 @@ app.post("/projects/:id/summary/confirm", async (c) => {
   const { row, questions } = await loadIntake(c.env.DB, c.req.param("id"), c.get("userId"));
   if (!row) return c.json({ error: "Not found" }, 404);
   if (row.status !== "intake") return c.json(toIntakeState(row, questions));
+  // Checked before confirming, so hitting the cap leaves the summary unconfirmed and retryable.
+  if (!(await spendModelCall(c.env, row.user_id))) return c.json({ error: modelLimitError }, 429);
   await c.env.DB.prepare("UPDATE projects SET summary_confirmed = 1, updated_at = ? WHERE id = ?").bind(now(), row.id).run();
   row.summary_confirmed = 1;
   const planned = await planQuestions(c.env, row, { existing: questions });
@@ -252,6 +274,8 @@ app.post("/projects/:id/answers", async (c) => {
     return c.json({ error: "Missing question." }, 400);
   }
   if (body.answer != null && typeof body.answer !== "string") return c.json({ error: "Answers must be text." }, 400);
+  // Each answer re-plans the remaining questions, which is a model call. Without the budget the answer would not even be saved.
+  if (body.replan !== false && !(await spendModelCall(c.env, userId))) return c.json({ error: modelLimitError }, 429);
   return c.json(await answerQuestion(c.env, row, userId, { ...body, questionId: body.questionId, answer: body.answer as string | null | undefined }));
 });
 

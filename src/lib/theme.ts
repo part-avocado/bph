@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 export type Theme = "light" | "dark";
 
-const KEY = "offshoot:theme";
+const KEY = "reskill:theme";
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
 function stored(): Theme | null {

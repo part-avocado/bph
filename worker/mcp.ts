@@ -10,16 +10,15 @@ import { getLatestVersion, getProjectRow, getQuestions, newId, now } from "./db"
 import { GeminiError } from "./gemini";
 import { planQuestions, summarizeIdea } from "./intake";
 import { verifyMcpRequest } from "./mcp-auth";
-import { answerQuestion, loadIntake, startRun, toIntakeState } from "./service";
+import { MODEL_CALL_LIMIT, PROJECT_LIMIT, answerQuestion, loadIntake, projectLimitReached, spendModelCall as reserveModelCall, startRun, toIntakeState } from "./service";
 
 const MAX_BODY_BYTES = 256 * 1024;
 const MAX_IDEA = 4000;
 const MAX_DETAILS = 8000;
 const MAX_PROMPT_CHARS = 60_000;
-const DAY_MS = 24 * 60 * 60 * 1000;
-// Per user, per 24 hours. Agents loop, so the model-backed tools and project creation are capped.
-const MODEL_CALL_LIMIT = 200;
-const PROJECT_LIMIT = 30;
+// get_build holds the call open this long while a build runs, so agents never need a sleep of their own.
+const WAIT_MS = 25_000;
+const WAIT_STEP_MS = 2_000;
 const BROWSER_ORIGINS = ["https://claude.ai"];
 
 // ---------- helpers ----------
@@ -53,7 +52,7 @@ type Extra = { authInfo?: { extra?: Record<string, unknown> } };
 /** The signed-in user, read from this request's verified token and nowhere else. */
 function userOf(extra: Extra): string {
   const id = extra.authInfo?.extra?.userId;
-  if (typeof id !== "string" || !id) throw new ToolError("Sign in to continue.", "SIGN_IN_REQUIRED", "Re-authenticate the offshoot MCP server (/mcp in Claude Code).");
+  if (typeof id !== "string" || !id) throw new ToolError("Sign in to continue.", "SIGN_IN_REQUIRED", "Re-authenticate the reskill MCP server (/mcp in Claude Code).");
   return id;
 }
 
@@ -88,14 +87,9 @@ async function guard(run: () => Promise<unknown>) {
   }
 }
 
-/** Reserves one model-backed call, atomically so parallel calls can't overshoot the cap. */
+/** Reserves one model-backed call, or tells the agent the daily cap is reached. */
 async function spendModelCall(env: Env, userId: string) {
-  const res = await env.DB.prepare(
-    "INSERT INTO mcp_calls (user_id, created_at) SELECT ?1, ?2 WHERE (SELECT COUNT(*) FROM mcp_calls WHERE user_id = ?1 AND created_at > ?3) < ?4",
-  )
-    .bind(userId, now(), now() - DAY_MS, MODEL_CALL_LIMIT)
-    .run();
-  if (!res.meta.changes) throw new ToolError(`You've used today's ${MODEL_CALL_LIMIT} model-backed calls.`, "LIMIT_REACHED", "They refill over the next 24 hours. Tell the user; don't retry.");
+  if (!(await reserveModelCall(env, userId))) throw new ToolError(`You've used today's ${MODEL_CALL_LIMIT} model-backed calls.`, "LIMIT_REACHED", "They refill over the next 24 hours. Tell the user; don't retry.");
 }
 
 async function ownedProject(env: Env, id: string, userId: string) {
@@ -119,9 +113,9 @@ function nextStep(row: { status: string; summary: string | null; summary_confirm
 // ---------- the server ----------
 
 function buildServer(env: Env) {
-  const server = new McpServer({ name: "offshoot", version: "1.0.0" }, {
+  const server = new McpServer({ name: "reskill", version: "1.0.0" }, {
     instructions:
-      "Offshoot turns an idea into a finished build prompt for a Claude Code / Codex skill. Flow: create_skill, review_summary (confirm what was understood), answer_question for each question the user should decide, start_build, get_build until done, then use the returned prompt to write the skill. You decide whether the summary is right: compare it with what the user asked for and confirm it yourself with review_summary, or send a correction as guidance. Only involve the user if their request is genuinely ambiguous. Ask the user the intake questions unless their request already answers them; answer those from what they said, and skip the rest.",
+      "reSkill turns an idea into a finished build prompt for a Claude Code / Codex skill. Flow: create_skill, review_summary (confirm what was understood), answer_question for each question the user should decide, start_build, get_build until done, then use the returned prompt to write the skill. You decide whether the summary is right: compare it with what the user asked for and confirm it yourself with review_summary, or send a correction as guidance. Only involve the user if their request is genuinely ambiguous. Ask the user the intake questions unless their request already answers them; answer those from what they said, and skip the rest.",
   });
 
   const read = { readOnlyHint: true, openWorldHint: false } as const;
@@ -160,10 +154,7 @@ function buildServer(env: Env) {
         const userId = userOf(extra);
         const trimmed = idea.trim();
         if (trimmed.length < 3) throw new ToolError("Describe the skill in a few words first.", "INVALID_INPUT");
-        const used = await env.DB.prepare("SELECT COUNT(*) AS n FROM projects WHERE user_id = ? AND created_at > ?")
-          .bind(userId, now() - DAY_MS)
-          .first<{ n: number }>();
-        if ((used?.n ?? 0) >= PROJECT_LIMIT) throw new ToolError(`You've created ${PROJECT_LIMIT} skills in the last 24 hours.`, "LIMIT_REACHED", "Reuse an existing skill from list_skills, or tell the user to try tomorrow.");
+        if (await projectLimitReached(env, userId)) throw new ToolError(`You've created ${PROJECT_LIMIT} skills in the last 24 hours.`, "LIMIT_REACHED", "Reuse an existing skill from list_skills, or tell the user to try tomorrow.");
 
         const id = newId();
         const t = now();
@@ -305,7 +296,7 @@ function buildServer(env: Env) {
         if (row.status === "intake" && !row.summary_confirmed) throw new ToolError("The summary hasn't been confirmed.", "WRONG_STEP", "Call review_summary with no guidance, then answer the questions.");
         const res = await startRun(env, row, userId, improve);
         if ("error" in res) throw new ToolError(res.error, res.status === 429 ? "LIMIT_REACHED" : "WRONG_STEP", res.status === 429 ? "Tell the user; the daily run limit refills over 24 hours." : undefined);
-        return { runId: res.runId, next: "Call get_build every 15-30 seconds until status is done." };
+        return { runId: res.runId, next: "Call get_build repeatedly until status is done. It waits for progress itself, so don't sleep or poll in a shell." };
       }),
   );
 
@@ -314,16 +305,30 @@ function buildServer(env: Env) {
     {
       title: "Get build progress and the prompt",
       description:
-        "Returns the build's status, round and score and, when a draft exists, the current build prompt. When status is done the prompt is final: hand it to a coding agent to write the skill.",
-      inputSchema: { id: idArg, version: z.number().int().positive().optional().describe("A specific prompt version. Defaults to the latest.") },
+        "Returns the build's status, round and score and, when a draft exists, the current build prompt. While a build is running this call waits up to ~25 seconds for progress, so just call it again; never sleep or poll in a shell. When status is done the prompt is final: hand it to a coding agent to write the skill.",
+      inputSchema: {
+        id: idArg,
+        version: z.number().int().positive().optional().describe("A specific prompt version. Defaults to the latest."),
+        wait: z.boolean().optional().describe("While a build is running, wait up to ~25s for progress before answering. Defaults to true."),
+      },
       annotations: read,
     },
-    async ({ id, version }, extra) =>
+    async ({ id, version, wait }, extra) =>
       guard(async () => {
         const userId = userOf(extra);
         const row = await ownedProject(env, id, userId);
-        const run = row.active_run_id ? await env.RUN.get(env.RUN.idFromName(row.active_run_id)).getState() : null;
-        const active = !!run && run.status !== "done" && run.status !== "failed";
+        const stateOf = () => (row.active_run_id ? env.RUN.get(env.RUN.idFromName(row.active_run_id)).getState() : Promise.resolve(null));
+        const isActive = (r: Awaited<ReturnType<typeof stateOf>>) => !!r && r.status !== "done" && r.status !== "failed";
+        let run = await stateOf();
+        if (wait !== false && isActive(run)) {
+          const seen = `${run!.status}/${run!.round}/${run!.score}`;
+          for (const deadline = Date.now() + WAIT_MS; Date.now() < deadline; ) {
+            await new Promise((r) => setTimeout(r, WAIT_STEP_MS));
+            run = await stateOf();
+            if (!isActive(run) || `${run!.status}/${run!.round}/${run!.score}` !== seen) break;
+          }
+        }
+        const active = isActive(run);
         const draft = version
           ? await env.DB.prepare("SELECT version, body, score FROM prompt_versions WHERE project_id = ? AND version = ?")
               .bind(row.id, version)
@@ -339,8 +344,7 @@ function buildServer(env: Env) {
           error: run?.error ?? null,
           version: draft?.version ?? null,
           prompt: draft ? draft.body.slice(0, MAX_PROMPT_CHARS) : null,
-          next: active ? "Still building. Poll again in 15-30 seconds." : draft ? "Build finished." : "Call start_build first.",
-          pollAfterSeconds: active ? 20 : null,
+          next: active ? "Still building. Call get_build again right away (it waits for progress); don't sleep." : draft ? "Build finished." : "Call start_build first.",
         };
       }),
   );
@@ -368,7 +372,7 @@ const protectedResource = (c: import("hono").Context<AppEnv>) => {
     generateClerkProtectedResourceMetadata({
       publishableKey: c.env.CLERK_PUBLISHABLE_KEY,
       resourceUrl: resourceUrl(c.req.url),
-      properties: { scopes_supported: ["profile", "email"], resource_name: "Offshoot" },
+      properties: { scopes_supported: ["profile", "email"], resource_name: "reSkill" },
     }),
   );
 };
