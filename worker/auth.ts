@@ -1,6 +1,7 @@
 import { verifyToken } from "@clerk/backend";
 import { createMiddleware } from "hono/factory";
 import type { AppEnv } from "./index";
+import { isOAuthAccessToken } from "./mcp-auth";
 
 // Parsed once per isolate instead of on every request.
 let partiesSource: string | null = null;
@@ -21,7 +22,8 @@ const verified = new Map<string, { sub: string; exp: number }>();
 
 /** Verifies a Clerk session token and returns the user id, or null. */
 export async function verifyClerkToken(env: Env, token: string | null | undefined): Promise<string | null> {
-  if (!token) return null;
+  // OAuth access tokens belong to the MCP endpoint only.
+  if (!token || isOAuthAccessToken(token)) return null;
   const hit = verified.get(token);
   if (hit) {
     if (hit.exp > Date.now()) return hit.sub;

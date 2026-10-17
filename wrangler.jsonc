@@ -7,7 +7,7 @@
   "observability": { "enabled": true },
   "assets": {
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*", "/mcp", "/.well-known/*"]
   },
   "vars": {
     "GEMINI_MODEL": "gemini-3.6-flash",
@@ -21,6 +21,11 @@
   "d1_databases": [
     { "binding": "DB", "database_name": "bph", "database_id": "814de9a0-8860-4226-87e9-2663ff564d19", "migrations_dir": "migrations" }
   ],
+  // Required by `wrangler preview`. Previews share the production database; give them their own
+  // database_id here if preview builds shouldn't touch real data.
+  "previews": {
+    "d1_databases": [{ "binding": "DB", "database_id": "814de9a0-8860-4226-87e9-2663ff564d19" }]
+  },
   "r2_buckets": [{ "binding": "UPLOADS", "bucket_name": "offshoot-uploads" }],
   "durable_objects": {
     "bindings": [{ "name": "RUN", "class_name": "RunObject" }]
