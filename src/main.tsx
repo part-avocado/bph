@@ -2,6 +2,7 @@ import { ClerkProvider } from "@clerk/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { useTheme } from "./lib/theme";
 import "./styles.css";
 
 const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
@@ -20,25 +21,38 @@ function MissingKey() {
   );
 }
 
+const LIGHT = { colorPrimary: "#0a0a0a", colorForeground: "#0a0a0a" };
+const DARK = {
+  colorPrimary: "#f4f4f5",
+  colorForeground: "#f4f4f5",
+  colorMutedForeground: "#9a9aa6",
+  colorBackground: "#17171b",
+  colorInput: "#0e0e11",
+  colorInputForeground: "#f4f4f5",
+  colorNeutral: "#f4f4f5",
+  colorDanger: "#f87171",
+  colorShimmer: "#2a2a31",
+};
+
+function Root({ publishableKey }: { publishableKey: string }) {
+  const { theme } = useTheme();
+  return (
+    <ClerkProvider
+      publishableKey={publishableKey}
+      afterSignOutUrl="/"
+      appearance={{
+        variables: {
+          ...(theme === "dark" ? DARK : LIGHT),
+          fontFamily: "Geist, ui-sans-serif, system-ui, sans-serif",
+          borderRadius: "10px",
+        },
+      }}
+    >
+      <App />
+    </ClerkProvider>
+  );
+}
+
 createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    {publishableKey ? (
-      <ClerkProvider
-        publishableKey={publishableKey}
-        afterSignOutUrl="/"
-        appearance={{
-          variables: {
-            colorPrimary: "#0a0a0a",
-            colorForeground: "#0a0a0a",
-            fontFamily: "Geist, ui-sans-serif, system-ui, sans-serif",
-            borderRadius: "10px",
-          },
-        }}
-      >
-        <App />
-      </ClerkProvider>
-    ) : (
-      <MissingKey />
-    )}
-  </StrictMode>,
+  <StrictMode>{publishableKey ? <Root publishableKey={publishableKey} /> : <MissingKey />}</StrictMode>,
 );

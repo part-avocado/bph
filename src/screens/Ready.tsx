@@ -184,7 +184,7 @@ export function Ready({ api, detail, onImprove }: { api: Api; detail: ProjectDet
             Download prompt.md
           </Button>
 
-          <div className="rounded-xl bg-paper/60 p-4 text-xs leading-code text-ink-2 ring-1 ring-black/5 backdrop-blur">
+          <div className="rounded-xl bg-paper/60 p-4 text-xs leading-code text-ink-2 ring-1 ring-ink/5 backdrop-blur">
             <h2 className="mb-1 text-2xs text-mute">Next</h2>
             <ol className="list-inside list-decimal marker:text-faint">
               <li>Open Claude Code in an empty folder</li>

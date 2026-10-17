@@ -1,7 +1,8 @@
 import { Show, SignInButton, UserButton } from "@clerk/react";
 import { motion, useReducedMotion, type HTMLMotionProps } from "motion/react";
-import type { AnchorHTMLAttributes, HTMLAttributes, MouseEvent, ReactNode } from "react";
+import { useState, type AnchorHTMLAttributes, type HTMLAttributes, type MouseEvent, type ReactNode } from "react";
 import { navigate } from "../lib/router";
+import { useTheme } from "../lib/theme";
 
 /** The one easing curve every entrance uses. Mirrors --ease-out-soft in styles.css. */
 export const EASE = [0.22, 1, 0.36, 1] as const;
@@ -93,7 +94,7 @@ export function Page({
   ...rest
 }: { tint?: Tint; grid?: boolean; title?: string; headerRight?: ReactNode } & HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={`relative min-h-full ${className}`} {...rest}>
+    <div className={`relative min-h-dvh ${className}`} {...rest}>
       <Mesh tint={tint} grid={grid} />
       <Header title={title} right={headerRight} />
       {children}
@@ -119,6 +120,34 @@ export function Link({ to, onClick, ...rest }: { to: string } & AnchorHTMLAttrib
   );
 }
 
+const MoonIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+    <path d="M13.5 9.6A5.8 5.8 0 0 1 6.4 2.5a5.8 5.8 0 1 0 7.1 7.1Z" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+const SunIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+    <circle cx="8" cy="8" r="2.9" stroke="currentColor" strokeWidth="1.4" />
+    <path d="M8 1.5v1.4M8 13.1v1.4M1.5 8h1.4M13.1 8h1.4M3.4 3.4l1 1M11.6 11.6l1 1M12.6 3.4l-1 1M4.4 11.6l-1 1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+  </svg>
+);
+
+export function ThemeToggle() {
+  const { theme, toggle } = useTheme();
+  const dark = theme === "dark";
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
+      title={dark ? "Light mode" : "Dark mode"}
+      className="flex size-7 items-center justify-center rounded-full text-mute transition-colors hover:text-ink"
+    >
+      {dark ? <SunIcon /> : <MoonIcon />}
+    </button>
+  );
+}
+
 export function Header({ title, right }: { title?: string; right?: ReactNode }) {
   return (
     <header className="relative z-10 flex h-16 items-center justify-between gap-3 px-4 sm:px-7">
@@ -140,6 +169,7 @@ export function Header({ title, right }: { title?: string; right?: ReactNode }) 
       </Link>
       <nav aria-label="Main" className="flex shrink-0 items-center gap-1 whitespace-nowrap sm:gap-2">
         {right}
+        <ThemeToggle />
         <Show when="signed-in">
           <Link to="/history" className="rounded-full px-2.5 py-1.5 text-xs text-mute transition-colors hover:text-ink">
             History
@@ -179,12 +209,12 @@ export function HintBar({ hints }: { hints: [ReactNode, string][] }) {
 // ---------- controls ----------
 
 /** Frosted pill used for badges, header actions and suggestion chips. */
-export const chip = "rounded-full bg-paper/80 text-xs text-ink-2 ring-1 ring-black/5 backdrop-blur transition";
+export const chip = "rounded-full bg-paper/80 text-xs text-ink-2 ring-1 ring-ink/5 backdrop-blur transition";
 
 const VARIANTS = {
-  primary: "bg-ink text-white shadow-press hover:bg-ink/90",
+  primary: "bg-ink text-on-ink shadow-press hover:bg-ink/90",
   accent: "bg-accent text-white shadow-accent hover:bg-accent-2",
-  secondary: "bg-paper/90 text-ink ring-1 ring-black/5 shadow-xs hover:bg-paper",
+  secondary: "bg-paper/90 text-ink ring-1 ring-ink/5 shadow-xs hover:bg-paper",
   outline: "border border-line bg-paper text-ink hover:bg-wash",
   danger: "bg-bad text-white hover:bg-bad/90",
   ghost: "text-mute hover:text-ink",
@@ -252,7 +282,7 @@ export function Spinner({ className = "", label }: { className?: string; label?:
  * Full-width waiting state between steps: a slow orbiting mark, what is happening,
  * and faint placeholder rows so the next screen doesn't make the layout jump.
  */
-export function Thinking({ title, detail, rows = 3 }: { title: string; detail?: ReactNode; rows?: number }) {
+export function Thinking({ title, detail, rows = 3, compact = false }: { title: string; detail?: ReactNode; rows?: number; compact?: boolean }) {
   const reduce = useReducedMotion();
   return (
     <motion.div
@@ -263,7 +293,7 @@ export function Thinking({ title, detail, rows = 3 }: { title: string; detail?: 
       role="status"
       aria-live="polite"
     >
-      <svg width="52" height="52" viewBox="0 0 52 52" fill="none" className="mx-auto" aria-hidden>
+      <svg width="52" height="52" viewBox="0 0 52 52" fill="none" className={`mx-auto ${compact ? "size-9" : ""}`} aria-hidden>
         <circle cx="26" cy="26" r="21" stroke="currentColor" strokeOpacity="0.1" strokeWidth="2" />
         <motion.g
           style={{ originX: "26px", originY: "26px" }}
@@ -283,8 +313,8 @@ export function Thinking({ title, detail, rows = 3 }: { title: string; detail?: 
           transition={{ duration: 1.8, ease: "easeInOut", repeat: Infinity }}
         />
       </svg>
-      <p className="mt-5 text-title font-semibold tracking-title text-balance">{title}</p>
-      {detail && <p className="mx-auto mt-2 max-w-sm text-sm text-pretty text-mute">{detail}</p>}
+      <p className={compact ? "mt-3 text-base font-medium tracking-snug text-balance" : "mt-5 text-title font-semibold tracking-title text-balance"}>{title}</p>
+      {detail && <p className={`mx-auto max-w-sm text-sm text-pretty text-mute ${compact ? "mt-1" : "mt-2"}`}>{detail}</p>}
       {rows > 0 && (
         <div className="mx-auto mt-9 w-full max-w-narrow space-y-2 opacity-70" aria-hidden>
           {Array.from({ length: rows }, (_, i) => (
@@ -293,6 +323,64 @@ export function Thinking({ title, detail, rows = 3 }: { title: string; detail?: 
         </div>
       )}
     </motion.div>
+  );
+}
+
+export const TrashIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
+    <path
+      d="M2.5 4.5h11M6 4.5V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5M4 4.5l.6 8.1a1 1 0 0 0 1 .9h4.8a1 1 0 0 0 1-.9l.6-8.1M6.7 7.2v3.6M9.3 7.2v3.6"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+/**
+ * Bottom-left "Abandon" with an inline confirmation. `onDelete` removes the project;
+ * on success we head home. Shown on every screen of a project that is still in progress.
+ */
+export function Abandon({ onDelete, onError }: { onDelete: () => Promise<void>; onError: (message: string) => void }) {
+  const [step, setStep] = useState<"idle" | "ask" | "deleting">("idle");
+  async function confirm() {
+    setStep("deleting");
+    try {
+      await onDelete();
+      navigate("/");
+    } catch (e) {
+      onError((e as Error).message);
+      setStep("idle");
+    }
+  }
+  return (
+    <div className="fixed bottom-5 left-4 z-20 flex items-center gap-1.5 text-xs sm:left-6">
+      {step === "idle" ? (
+        <button
+          type="button"
+          onClick={() => setStep("ask")}
+          className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-mute transition-colors hover:bg-bad/10 hover:text-bad"
+        >
+          <TrashIcon />
+          Abandon
+        </button>
+      ) : (
+        <div className="flex items-center gap-1 rounded-lg bg-paper/90 py-1 pr-1 pl-3 shadow-outline backdrop-blur">
+          <span className="text-mute">{step === "deleting" ? "Deleting…" : "Delete this skill?"}</span>
+          {step === "ask" && (
+            <>
+              <button type="button" onClick={() => void confirm()} className="rounded-md px-2 py-1 font-medium text-bad transition-colors hover:bg-bad/10">
+                Delete
+              </button>
+              <button type="button" onClick={() => setStep("idle")} className="rounded-md px-2 py-1 text-mute transition-colors hover:text-ink">
+                Keep
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -343,10 +431,10 @@ export function Toast({ message, onClose }: { message: string; onClose: () => vo
       initial={{ opacity: 0, y: 12, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 8 }}
-      className="fixed inset-x-0 bottom-16 z-50 mx-auto flex w-fit max-w-[90vw] items-center gap-3 rounded-xl bg-ink px-4 py-2.5 text-base text-white shadow-xl"
+      className="fixed inset-x-0 bottom-16 z-50 mx-auto flex w-fit max-w-[90vw] items-center gap-3 rounded-xl bg-ink px-4 py-2.5 text-base text-on-ink shadow-xl"
     >
       <span>{message}</span>
-      <button onClick={onClose} className="text-white/60 hover:text-white" aria-label="Dismiss">
+      <button onClick={onClose} className="text-on-ink/60 hover:text-on-ink" aria-label="Dismiss">
         ✕
       </button>
     </motion.div>

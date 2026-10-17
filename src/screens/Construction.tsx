@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { AgentState, LogLine, Project, RunState } from "../../shared/types";
-import { Button, CheckIcon, Sep, EASE, EnterIcon, HintBar, Kbd, Page, Skeleton, Spinner, rise } from "../components/ui";
+import { Abandon, Button, CheckIcon, Sep, EASE, EnterIcon, HintBar, Kbd, Page, Skeleton, Spinner, Thinking, rise } from "../components/ui";
 import type { Api } from "../lib/api";
 import { isTyping, useKeys } from "../lib/keys";
 import { useRun } from "../lib/useRun";
@@ -254,6 +254,7 @@ export function Construction({ api, project, runId, onDone }: { api: Api; projec
   const [panel, setPanel] = useState<null | "draft" | "log">(null);
   const [steering, setSteering] = useState(false);
   const [steerText, setSteerText] = useState("");
+  const [abandonError, setAbandonError] = useState<string | null>(null);
   const steerRef = useRef<HTMLInputElement>(null);
 
   const gridRef = useRef<HTMLDivElement>(null);
@@ -415,9 +416,9 @@ export function Construction({ api, project, runId, onDone }: { api: Api; projec
             <div className="flex flex-col">
               <h2 className="mb-3 font-mono text-2xs font-normal text-mute">Orchestrate</h2>
               <div className="flex flex-1 items-center">
-                <div ref={orchRef} className="w-full rounded-xl bg-ink p-3 text-white shadow-press-lg">
+                <div ref={orchRef} className="w-full rounded-xl bg-ink p-3 text-on-ink shadow-press-lg">
                   <div className="flex items-center gap-2.5">
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-white/10">
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-on-ink/10">
                       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
                         <circle cx="8" cy="3.5" r="1.8" stroke="currentColor" strokeWidth="1.4" />
                         <circle cx="3.5" cy="12" r="1.8" stroke="currentColor" strokeWidth="1.4" />
@@ -427,20 +428,20 @@ export function Construction({ api, project, runId, onDone }: { api: Api; projec
                     </span>
                     <div>
                       <div className="text-sm font-medium">Orchestrator</div>
-                      <div className="text-2xs text-white/60">
+                      <div className="text-2xs text-on-ink/60">
                         {state ? (state.round === 0 ? "Drafting" : `Round ${state.round} of ${state.maxRounds}`) : "Starting"}
                       </div>
                     </div>
                   </div>
                   {state?.score != null && (
                     <div className="mt-3">
-                      <div className="flex justify-between font-mono text-2xs text-white/60">
+                      <div className="flex justify-between font-mono text-2xs text-on-ink/60">
                         <span>score {state.score}</span>
                         <span>target {state.targetScore}</span>
                       </div>
-                      <div className="mt-1 h-0.75 overflow-hidden rounded-full bg-white/10" aria-hidden>
+                      <div className="mt-1 h-0.75 overflow-hidden rounded-full bg-on-ink/10" aria-hidden>
                         <motion.div
-                          className={`h-full rounded-full ${state.score >= state.targetScore ? "bg-ok-bright" : "bg-white/80"}`}
+                          className={`h-full rounded-full ${state.score >= state.targetScore ? "bg-ok-bright" : "bg-on-ink/80"}`}
                           animate={{ width: `${Math.min(100, (state.score / state.targetScore) * 100)}%` }}
                         />
                       </div>
@@ -451,7 +452,7 @@ export function Construction({ api, project, runId, onDone }: { api: Api; projec
                       onClick={() => send({ type: "rounds", delta: -1 })}
                       disabled={!state || done || state.maxRounds <= Math.max(1, state.round)}
                       aria-label="Remove a round"
-                      className="h-7 rounded-md bg-white/10 text-xs text-white/85 transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-35"
+                      className="h-7 rounded-md bg-on-ink/10 text-xs text-on-ink/85 transition hover:bg-on-ink/15 disabled:cursor-not-allowed disabled:opacity-35"
                     >
                       − Round
                     </button>
@@ -459,7 +460,7 @@ export function Construction({ api, project, runId, onDone }: { api: Api; projec
                       onClick={() => send({ type: "rounds", delta: 1 })}
                       disabled={!state || done || state.maxRounds >= 8}
                       aria-label="Add a round"
-                      className="h-7 rounded-md bg-white/10 text-xs text-white/85 transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-35"
+                      className="h-7 rounded-md bg-on-ink/10 text-xs text-on-ink/85 transition hover:bg-on-ink/15 disabled:cursor-not-allowed disabled:opacity-35"
                     >
                       + Round
                     </button>
@@ -498,11 +499,7 @@ export function Construction({ api, project, runId, onDone }: { api: Api; projec
                     </motion.div>
                   )}
                   {!state && (
-                    <motion.div key="boot" className="space-y-2.5" aria-busy="true" aria-label="Connecting to the run">
-                      {[0, 1, 2].map((i) => (
-                        <Skeleton key={i} className="h-19.5 rounded-xl" delay={i * 120} />
-                      ))}
-                    </motion.div>
+                    <Thinking key="boot" compact rows={0} title="Connecting to the run" detail="Spinning up the orchestrator." />
                   )}
                 </AnimatePresence>
               </div>
@@ -607,6 +604,22 @@ export function Construction({ api, project, runId, onDone }: { api: Api; projec
       <Drawer open={panel === "log"} onClose={() => setPanel(null)} title="Full log" side="bottom">
         <LogView log={log} />
       </Drawer>
+
+      {!done && (
+        <Abandon
+          onDelete={async () => {
+            // Stop the agents first so they don't keep spending tokens on a deleted project.
+            send({ type: "pause" });
+            await api.deleteProject(project.id);
+          }}
+          onError={setAbandonError}
+        />
+      )}
+      {abandonError && (
+        <p className="fixed bottom-16 left-4 z-20 max-w-xs rounded-lg bg-paper px-3 py-2 text-xs text-bad shadow-outline sm:left-6" role="alert">
+          {abandonError}
+        </p>
+      )}
 
       <HintBar
         hints={[

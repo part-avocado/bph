@@ -46,6 +46,8 @@
   --color-line: #e7e7ea;
   --color-line-2: #f0f0f2;
   --color-paper: #ffffff;
+  /* Text and icons that sit on a bg-ink surface. */
+  --color-on-ink: #ffffff;
   --color-wash: #f7f7f8;
   --color-accent: #2563eb;
   --color-accent-2: #1d4ed8;
@@ -79,6 +81,37 @@
 
 :root {
   color-scheme: light;
+  --shimmer-hi: #fafafa;
+  --grid-line: rgb(0 0 0 / 0.035);
+}
+
+/* Dark theme: only the tokens change; every utility reads them. Set by theme.ts and the inline script in index.html. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-ink: #f4f4f5;
+  --color-ink-2: #c9c9d1;
+  --color-mute: #9a9aa6;
+  --color-faint: #6e6e7a;
+  --color-line: #2b2b32;
+  --color-line-2: #212127;
+  --color-paper: #17171b;
+  --color-wash: #0e0e11;
+  --color-on-ink: #0a0a0a;
+  --color-accent: #3b82f6;
+  --color-accent-2: #60a5fa;
+  --color-ok: #4ade80;
+  --color-warn: #fbbf24;
+  --color-bad: #f87171;
+  --shimmer-hi: #2a2a31;
+  --grid-line: rgb(255 255 255 / 0.04);
+  --shadow-outline: 0 0 0 1px rgb(255 255 255 / 0.08);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 40px -12px rgb(0 0 0 / 0.6);
+  --shadow-card-lift: 0 1px 2px rgb(0 0 0 / 0.4), 0 20px 60px -16px rgb(0 0 0 / 0.7);
+  --shadow-press: 0 6px 16px -6px rgb(0 0 0 / 0.7);
+  --shadow-press-lg: 0 10px 28px -11px rgb(0 0 0 / 0.75);
+}
+:root[data-theme="dark"] .mesh i {
+  opacity: 0.16;
 }
 
 html,
@@ -140,8 +173,8 @@ body {
   pointer-events: none;
   z-index: 0;
   background-image:
-    linear-gradient(to right, rgb(0 0 0 / 0.035) 1px, transparent 1px),
-    linear-gradient(to bottom, rgb(0 0 0 / 0.035) 1px, transparent 1px);
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
   background-size: 44px 44px;
   mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 30%, transparent 85%);
 }
@@ -164,9 +197,9 @@ body {
   box-shadow: 0 1px 0 var(--color-line);
 }
 .kbd-dark {
-  color: rgb(255 255 255 / 0.75);
-  background: rgb(255 255 255 / 0.12);
-  border-color: rgb(255 255 255 / 0.14);
+  color: color-mix(in oklab, var(--color-on-ink) 75%, transparent);
+  background: color-mix(in oklab, var(--color-on-ink) 12%, transparent);
+  border-color: color-mix(in oklab, var(--color-on-ink) 14%, transparent);
   box-shadow: none;
 }
 /* Keyboard hints mean nothing on a touch screen. */
@@ -185,7 +218,7 @@ body {
 }
 
 .shimmer {
-  background: linear-gradient(90deg, var(--color-line-2) 0%, #fafafa 40%, var(--color-line-2) 80%);
+  background: linear-gradient(90deg, var(--color-line-2) 0%, var(--shimmer-hi) 40%, var(--color-line-2) 80%);
   background-size: 200% 100%;
   animation: shimmer 1.4s linear infinite;
   border-radius: 8px;

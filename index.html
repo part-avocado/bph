@@ -5,7 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="Describe a skill. Offshoot asks the right questions, refines the brief with parallel reviewers, and hands you a prompt Claude Code can build without asking." />
     <meta name="theme-color" content="#f7f7f8" />
-    <meta name="color-scheme" content="light" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      // Set the theme before first paint so dark users never see a white flash.
+      (function () {
+        try {
+          var p = localStorage.getItem("offshoot:theme");
+          var dark = p === "dark" || (p !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.dataset.theme = dark ? "dark" : "light";
+          if (dark) document.querySelector('meta[name="theme-color"]').setAttribute("content", "#0e0e11");
+        } catch (e) {}
+      })();
+    </script>
     <meta property="og:title" content="Offshoot" />
     <meta property="og:description" content="Describe a skill. Get one prompt Claude Code can build from without asking anything." />
     <meta property="og:type" content="website" />

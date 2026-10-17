@@ -1,10 +1,9 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { IntakeState, Project, Question } from "../../shared/types";
-import { ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, Button, CheckIcon, EASE, EnterIcon, ErrorText, HintBar, Kbd, Page, SpaceIcon, Skeleton, Thinking } from "../components/ui";
+import { Abandon, ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, Button, CheckIcon, EASE, EnterIcon, ErrorText, HintBar, Kbd, Page, SpaceIcon, Skeleton, Thinking } from "../components/ui";
 import type { Api } from "../lib/api";
 import { isTyping, useKeys } from "../lib/keys";
-import { navigate } from "../lib/router";
 
 interface Local {
   choice: number | null;
@@ -27,7 +26,6 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
   const [rewriting, setRewriting] = useState(false);
   const guidanceRef = useRef<HTMLTextAreaElement>(null);
   const [lastAnswer, setLastAnswer] = useState<string | null | undefined>(undefined);
-  const [abandoning, setAbandoning] = useState<"ask" | "deleting" | null>(null);
   const [questions, setQuestions] = useState<Question[] | null>(null);
   /** Answers given here that the server may not have confirmed yet. */
   const [pending, setPending] = useState<Record<string, string | null>>({});
@@ -138,18 +136,6 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
     if (prevIndex < 0) return;
     setDir(-1);
     setCurrentId(view[prevIndex].id);
-  }
-
-  async function abandon() {
-    setAbandoning("deleting");
-    try {
-      await queue.current;
-      await api.deleteProject(project.id);
-      navigate("/");
-    } catch (e) {
-      setError((e as Error).message);
-      setAbandoning(null);
-    }
   }
 
   async function confirmSummary() {
@@ -454,8 +440,8 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
                       }`}
                     >
                       <span
-                        className={`flex size-4.5 shrink-0 items-center justify-center rounded-full text-white transition-colors ${
-                          selected ? "bg-ink" : "ring-1 ring-black/20"
+                        className={`flex size-4.5 shrink-0 items-center justify-center rounded-full text-on-ink transition-colors ${
+                          selected ? "bg-ink" : "ring-1 ring-ink/20"
                         }`}
                         aria-hidden
                       >
@@ -555,34 +541,13 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
       </main>
 
       {!loading && (
-        <div className="fixed bottom-5 left-4 z-20 flex items-center gap-2 text-xs sm:left-6">
-          {abandoning ? (
-            <>
-              <span className="text-mute">{abandoning === "deleting" ? "Deleting…" : "Delete this skill?"}</span>
-              {abandoning === "ask" && (
-                <>
-                  <button type="button" onClick={() => void abandon()} className="rounded-md px-1.5 py-1 font-medium text-bad transition-colors hover:bg-bad/10">
-                    Delete
-                  </button>
-                  <button type="button" onClick={() => setAbandoning(null)} className="rounded-md px-1.5 py-1 text-mute transition-colors hover:text-ink">
-                    Keep
-                  </button>
-                </>
-              )}
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setAbandoning("ask")}
-              className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-faint transition-colors hover:bg-bad/10 hover:text-bad"
-            >
-              <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden>
-                <path d="M2.5 3.5h7M5 3.5V2.2h2v1.3M3.5 3.5l.4 6h4.2l.4-6M5.2 5.3v2.6M6.8 5.3v2.6" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              Abandon
-            </button>
-          )}
-        </div>
+        <Abandon
+          onDelete={async () => {
+            await queue.current;
+            await api.deleteProject(project.id);
+          }}
+          onError={setError}
+        />
       )}
 
       <HintBar
