@@ -28,8 +28,8 @@ const word: Variants = {
 
 function Headline() {
   const lines = [
-    { text: "Describe a skill.", className: "text-ink" },
-    { text: "We'll write the prompt.", className: "text-faint" },
+    { text: "Describe your skill,", className: "text-ink" },
+    { text: "and we'll take it from here.", className: "text-faint" },
   ];
   let i = 0;
   return (
