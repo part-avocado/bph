@@ -33,7 +33,10 @@ export async function verifyClerkToken(env: Env, token: string | null | undefine
   });
   const claims = data as { sub?: string; exp?: number } | undefined;
   const sub = claims?.sub;
-  if (errors || !sub) return null;
+  if (errors || !sub) {
+    if (errors) console.error("Clerk token rejected:", JSON.stringify(errors));
+    return null;
+  }
   if (claims.exp) {
     if (verified.size >= VERIFIED_MAX) verified.delete(verified.keys().next().value!);
     verified.set(token, { sub, exp: claims.exp * 1000 });
