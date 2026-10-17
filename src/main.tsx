@@ -8,12 +8,15 @@ const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | un
 
 function MissingKey() {
   return (
-    <div style={{ fontFamily: "system-ui", maxWidth: 520, margin: "20vh auto", padding: 16, lineHeight: 1.6 }}>
-      <h1 style={{ fontSize: 20 }}>Clerk isn't configured</h1>
-      <p>
-        Add <code>VITE_CLERK_PUBLISHABLE_KEY</code> to <code>.env</code> (see <code>.env.example</code>) and restart the dev server.
-      </p>
-    </div>
+    <main className="mx-auto max-w-[520px] px-4 pt-[20vh]">
+      <div className="card p-6">
+        <h1 className="text-lg font-semibold tracking-heading">Clerk isn't configured</h1>
+        <p className="mt-2 text-base leading-relaxed text-mute">
+          Add <code className="font-mono text-ink">VITE_CLERK_PUBLISHABLE_KEY</code> to <code className="font-mono text-ink">.env</code> (see{" "}
+          <code className="font-mono text-ink">.env.example</code>) and restart the dev server.
+        </p>
+      </div>
+    </main>
   );
 }
 

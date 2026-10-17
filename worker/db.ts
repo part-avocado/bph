@@ -28,8 +28,14 @@ export function toProject(r: ProjectRow): Project {
   };
 }
 
+// Statements are exposed alongside their getters so routes can send several
+// reads to D1 in one db.batch round trip instead of one request each.
+
+export const projectStmt = (db: D1Database, id: string, userId: string) =>
+  db.prepare("SELECT * FROM projects WHERE id = ? AND user_id = ?").bind(id, userId);
+
 export async function getProjectRow(db: D1Database, id: string, userId: string) {
-  return db.prepare("SELECT * FROM projects WHERE id = ? AND user_id = ?").bind(id, userId).first<ProjectRow>();
+  return projectStmt(db, id, userId).first<ProjectRow>();
 }
 
 interface QuestionRow {
@@ -41,12 +47,11 @@ interface QuestionRow {
   skipped: number;
 }
 
-export async function getQuestions(db: D1Database, projectId: string): Promise<Question[]> {
-  const { results } = await db
-    .prepare("SELECT id, prompt, why, options, answer, skipped FROM questions WHERE project_id = ? ORDER BY idx")
-    .bind(projectId)
-    .all<QuestionRow>();
-  return results.map((q) => ({
+export const questionsStmt = (db: D1Database, projectId: string) =>
+  db.prepare("SELECT id, prompt, why, options, answer, skipped FROM questions WHERE project_id = ? ORDER BY idx").bind(projectId);
+
+export function toQuestions(rows: QuestionRow[]): Question[] {
+  return rows.map((q) => ({
     id: q.id,
     prompt: q.prompt,
     why: q.why,
@@ -56,17 +61,32 @@ export async function getQuestions(db: D1Database, projectId: string): Promise<Q
   }));
 }
 
-export async function getLatestVersion(db: D1Database, projectId: string): Promise<PromptVersion | null> {
-  const r = await db
-    .prepare("SELECT id, version, body, score, created_at FROM prompt_versions WHERE project_id = ? ORDER BY version DESC LIMIT 1")
-    .bind(projectId)
-    .first<{ id: string; version: number; body: string; score: number | null; created_at: number }>();
+export async function getQuestions(db: D1Database, projectId: string): Promise<Question[]> {
+  const { results } = await questionsStmt(db, projectId).all<QuestionRow>();
+  return toQuestions(results);
+}
+
+interface VersionRow {
+  id: string;
+  version: number;
+  body: string;
+  score: number | null;
+  created_at: number;
+}
+
+export const latestVersionStmt = (db: D1Database, projectId: string) =>
+  db.prepare("SELECT id, version, body, score, created_at FROM prompt_versions WHERE project_id = ? ORDER BY version DESC LIMIT 1").bind(projectId);
+
+export function toVersion(r: VersionRow | null | undefined): PromptVersion | null {
   return r ? { id: r.id, version: r.version, body: r.body, score: r.score, createdAt: r.created_at } : null;
 }
 
+export async function getLatestVersion(db: D1Database, projectId: string): Promise<PromptVersion | null> {
+  return toVersion(await latestVersionStmt(db, projectId).first<VersionRow>());
+}
+
 /** The user's brief as every agent sees it: idea, attachment digest and answers. */
-export async function buildBrief(db: D1Database, project: ProjectRow): Promise<string> {
-  const questions = await getQuestions(db, project.id);
+export function buildBrief(project: ProjectRow, questions: Question[]): string {
   const answered = questions.filter((q) => q.answer && !q.skipped);
   const lines = [`Idea: ${project.idea}`];
   if (project.context) lines.push("", "From the user's attachments:", project.context);
@@ -82,4 +102,4 @@ export async function buildBrief(db: D1Database, project: ProjectRow): Promise<s
   return lines.join("\n");
 }
 
-export type { ProjectRow };
+export type { ProjectRow, QuestionRow, VersionRow };

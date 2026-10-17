@@ -56,10 +56,13 @@ async function walkFolder(root: FileSystemDirectoryEntry): Promise<File[]> {
   // Key files first, then shallow source files, within a text budget.
   keyFiles.sort((a, b) => Number(!KEY_FILES.test(a.entry.name)) - Number(!KEY_FILES.test(b.entry.name)) || a.depth - b.depth);
   const out: File[] = [new File([`Folder: ${root.name}/\n\n${tree.join("\n")}`], `${root.name}-tree.txt`, { type: "text/plain" })];
+  // Resolve file handles together (this only reads metadata, not contents), then apply the budget in order.
+  const handles = await Promise.all(keyFiles.map((k) => fileOf(k.entry).catch(() => null)));
   let budget = FOLDER_TEXT_BUDGET;
-  for (const k of keyFiles) {
-    const f = await fileOf(k.entry);
-    if (f.size > budget || f.size > 60_000) continue;
+  for (let i = 0; i < keyFiles.length; i++) {
+    const k = keyFiles[i];
+    const f = handles[i];
+    if (!f || f.size > budget || f.size > 60_000) continue;
     budget -= f.size;
     out.push(new File([f], `${root.name}/${k.path}`, { type: f.type || "text/plain" }));
     if (out.length >= 30) break;
@@ -69,18 +72,18 @@ async function walkFolder(root: FileSystemDirectoryEntry): Promise<File[]> {
 
 /** Reads a drop event, expanding any folders. */
 export async function filesFromDrop(dt: DataTransfer): Promise<File[]> {
-  const out: File[] = [];
   const items = [...dt.items].filter((i) => i.kind === "file");
   const entries = items.map((i) => i.webkitGetAsEntry?.()).filter(Boolean) as FileSystemEntry[];
   if (!entries.length) return [...dt.files].filter(isSupported);
-  for (const e of entries) {
-    if (e.isDirectory) out.push(...(await walkFolder(e as FileSystemDirectoryEntry)));
-    else {
+  // Each dropped item is independent, so read them concurrently; results keep drop order.
+  const groups = await Promise.all(
+    entries.map(async (e) => {
+      if (e.isDirectory) return walkFolder(e as FileSystemDirectoryEntry);
       const f = await fileOf(e as FileSystemFileEntry);
-      if (isSupported(f)) out.push(f);
-    }
-  }
-  return out;
+      return isSupported(f) ? [f] : [];
+    }),
+  );
+  return groups.flat();
 }
 
 export function formatBytes(n: number) {

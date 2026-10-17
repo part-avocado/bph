@@ -80,15 +80,18 @@ const RETRYABLE = new Set([408, 429, 500, 502, 503, 504]);
 
 async function post(env: Env, method: string, body: unknown, query = ""): Promise<Response> {
   const url = `${env.GEMINI_BASE_URL.replace(/\/$/, "")}/v1beta/models/${env.GEMINI_MODEL}:${method}${query}`;
+  // Serialise once: prompts carry the whole brief and draft, and retries resend the same bytes.
+  const payload = JSON.stringify(body);
   let lastError: GeminiError | null = null;
+  let retryAfterMs = 0;
   for (let attempt = 0; attempt < 4; attempt++) {
-    if (attempt) await new Promise((r) => setTimeout(r, 600 * 2 ** attempt + Math.random() * 400));
+    if (attempt) await new Promise((r) => setTimeout(r, Math.max(retryAfterMs, 600 * 2 ** attempt + Math.random() * 400)));
     let res: Response;
     try {
       res = await fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
-        body: JSON.stringify(body),
+        body: payload,
         signal: AbortSignal.timeout(180_000),
       });
     } catch (err) {
@@ -99,6 +102,9 @@ async function post(env: Env, method: string, body: unknown, query = ""): Promis
     const detail = (await res.text()).slice(0, 500);
     lastError = new GeminiError(`Gemini ${res.status}: ${detail}`, res.status);
     if (!RETRYABLE.has(res.status)) break;
+    // Honour the server's back-off hint on 429/503 (capped so a run never stalls for long).
+    const hint = Number(res.headers.get("retry-after"));
+    retryAfterMs = Number.isFinite(hint) && hint > 0 ? Math.min(hint * 1000, 20_000) : 0;
   }
   throw lastError!;
 }
@@ -115,7 +121,9 @@ function collect(r: RawResponse, into: GenerateResult) {
 export async function generate(env: Env, req: GenerateRequest): Promise<GenerateResult> {
   const res = await post(env, "generateContent", buildBody(req));
   const out: GenerateResult = { text: "", calls: [], usage: { tokensIn: 0, tokensOut: 0 } };
-  collect((await res.json()) as RawResponse, out);
+  const raw = (await res.json().catch(() => null)) as RawResponse | null;
+  if (!raw) throw new GeminiError("Gemini returned a response that wasn't JSON.", 502);
+  collect(raw, out);
   return out;
 }
 
@@ -132,21 +140,33 @@ export async function generateStream(
   const out: GenerateResult = { text: "", calls: [], usage: { tokensIn: 0, tokensOut: 0 } };
   const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = "";
+  const handle = (raw: string) => {
+    const line = raw.trim();
+    if (!line.startsWith("data:")) return false;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === "[DONE]") return false;
+    let chunk: RawResponse;
+    try {
+      chunk = JSON.parse(payload) as RawResponse;
+    } catch {
+      throw new GeminiError("Gemini sent a malformed stream chunk.", 502);
+    }
+    collect(chunk, out);
+    return true;
+  };
   for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
     buffer += value;
-    let nl: number;
-    while ((nl = buffer.indexOf("\n")) >= 0) {
-      const line = buffer.slice(0, nl).trim();
-      buffer = buffer.slice(nl + 1);
-      if (!line.startsWith("data:")) continue;
-      const payload = line.slice(5).trim();
-      if (!payload || payload === "[DONE]") continue;
-      collect(JSON.parse(payload) as RawResponse, out);
-      onChunk(out.text);
-    }
+    const lines = buffer.split("\n");
+    buffer = lines.pop()!;
+    let changed = false;
+    for (const line of lines) changed = handle(line) || changed;
+    // One progress callback per network read, not per event.
+    if (changed) onChunk(out.text);
   }
+  // The last event may arrive without a trailing newline (it usually carries the usage totals).
+  if (handle(buffer)) onChunk(out.text);
   return out;
 }
 

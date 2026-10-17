@@ -1,5 +1,6 @@
+import type { Question } from "../shared/types";
 import { DIGEST_SCHEMA, DIGEST_SYSTEM, PLANNER_SCHEMA, PLANNER_SYSTEM } from "./agents/prompts";
-import { getQuestions, newId, now, type ProjectRow } from "./db";
+import { getQuestions, newId, now, projectStmt, questionsStmt, toQuestions, type ProjectRow, type QuestionRow } from "./db";
 import { generate, parseJson, type Part } from "./gemini";
 
 const TEXT_LIMIT = 60_000;
@@ -24,19 +25,28 @@ export async function ensureDigest(env: Env, project: ProjectRow): Promise<strin
     return (project.context = "");
   }
 
+  // Fetch every attachment from R2 at once; the text budget is applied in order afterwards.
+  const bodies = await Promise.all(
+    results.map(async (a) => {
+      const obj = await env.UPLOADS.get(a.r2_key);
+      if (!obj) return null;
+      return isInlineMime(a.mime) ? { inline: true as const, data: toBase64(await obj.arrayBuffer()) } : { inline: false as const, data: await obj.text() };
+    }),
+  );
+
   const parts: Part[] = [{ text: `The user's idea: ${project.idea}\n\nAttached files follow.` }];
   let textBudget = TEXT_LIMIT;
-  for (const a of results) {
-    const obj = await env.UPLOADS.get(a.r2_key);
-    if (!obj) continue;
-    if (isInlineMime(a.mime)) {
-      parts.push({ text: `\n--- ${a.name} ---` }, { inlineData: { mimeType: a.mime, data: toBase64(await obj.arrayBuffer()) } });
+  results.forEach((a, i) => {
+    const body = bodies[i];
+    if (!body) return;
+    if (body.inline) {
+      parts.push({ text: `\n--- ${a.name} ---` }, { inlineData: { mimeType: a.mime, data: body.data } });
     } else if (textBudget > 0) {
-      const text = (await obj.text()).slice(0, textBudget);
+      const text = body.data.slice(0, textBudget);
       textBudget -= text.length;
       parts.push({ text: `\n--- ${a.name} ---\n${text}` });
     }
-  }
+  });
 
   const res = await generate(env, {
     system: DIGEST_SYSTEM,
@@ -44,7 +54,8 @@ export async function ensureDigest(env: Env, project: ProjectRow): Promise<strin
     schema: DIGEST_SCHEMA,
     thinking: "low",
   });
-  const { context } = parseJson<{ context: string }>(res.text);
+  const parsed = parseJson<{ context?: unknown }>(res.text);
+  const context = typeof parsed.context === "string" ? parsed.context : "";
   await env.DB.prepare("UPDATE projects SET context = ? WHERE id = ?").bind(context, project.id).run();
   project.context = context;
   return context;
@@ -59,11 +70,11 @@ const MAX_QUESTIONS = 6;
 
 /**
  * Re-plans the unanswered questions given everything known so far. Answered
- * questions stay; the pending tail is replaced.
+ * questions stay; the pending tail is replaced. Returns the project row and
+ * questions as they stand after the write, read in the same D1 batch.
  */
-export async function planQuestions(env: Env, project: ProjectRow, opts: { keepNext?: boolean } = {}) {
-  await ensureDigest(env, project);
-  const existing = await getQuestions(env.DB, project.id);
+export async function planQuestions(env: Env, project: ProjectRow, opts: { keepNext?: boolean; existing?: Question[] } = {}) {
+  const [, existing] = await Promise.all([ensureDigest(env, project), opts.existing ?? getQuestions(env.DB, project.id)]);
   const settled = existing.filter((q) => q.answer !== null || q.skipped);
   // The browser may already be showing the next question; keep it stable.
   const pinned = opts.keepNext ? existing.find((q) => q.answer === null && !q.skipped) : undefined;
@@ -86,7 +97,19 @@ export async function planQuestions(env: Env, project: ProjectRow, opts: { keepN
     thinking: "low",
     temperature: 0.4,
   });
-  const out = parseJson<PlannerOutput>(res.text);
+  const raw = parseJson<Partial<PlannerOutput>>(res.text);
+  // Structured output is usually right, but never trust its shape blindly.
+  const out: PlannerOutput = {
+    title: typeof raw.title === "string" && raw.title.trim() ? raw.title.trim() : project.title,
+    questions: (Array.isArray(raw.questions) ? raw.questions : [])
+      .filter((q) => q && typeof q.prompt === "string" && q.prompt.trim() && Array.isArray(q.options))
+      .map((q) => ({
+        prompt: q.prompt.trim().slice(0, 300),
+        why: typeof q.why === "string" ? q.why.slice(0, 300) : "",
+        // Deduped: the browser keys option buttons by their text.
+        options: [...new Set(q.options.filter((o): o is string => typeof o === "string" && !!o.trim()).map((o) => o.trim().slice(0, 200)))],
+      })),
+  };
   const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
   const asked = new Set([...settled, ...(pinned ? [pinned] : [])].map((q) => norm(q.prompt)));
   const fresh = out.questions
@@ -114,8 +137,13 @@ export async function planQuestions(env: Env, project: ProjectRow, opts: { keepN
       now(),
       project.id,
     ),
+    // Read back the result in the same round trip.
+    projectStmt(env.DB, project.id, project.user_id),
+    questionsStmt(env.DB, project.id),
   ];
-  await env.DB.batch(stmts);
+  const results = await env.DB.batch(stmts);
   if (settled.length === 0) project.title = out.title.slice(0, 40);
-  return { complete: fresh.length === 0 && !pinned };
+  const row = (results[results.length - 2].results[0] as ProjectRow | undefined) ?? project;
+  const questions = toQuestions(results[results.length - 1].results as QuestionRow[]);
+  return { complete: fresh.length === 0 && !pinned, row, questions };
 }

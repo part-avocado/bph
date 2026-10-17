@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useState } from "react";
 import type { ProjectDetail } from "../../shared/types";
-import { Header, Mesh, Spinner, screen } from "../components/ui";
+import { Button, EmptyState, Page, Skeleton, screen } from "../components/ui";
 import type { Api } from "../lib/api";
 import { navigate } from "../lib/router";
 import { Construction } from "./Construction";
@@ -36,17 +36,19 @@ export function ProjectScreen({ api, id }: { api: Api; id: string }) {
 
   if (error) {
     return (
-      <div className="relative min-h-full">
-        <Mesh />
-        <Header />
-        <div className="relative z-10 mx-auto max-w-sm pt-[20vh] text-center">
-          <p className="text-[15px] font-medium">We couldn't open this tool.</p>
-          <p className="mt-1 text-[12.5px] text-mute">{error}</p>
-          <button onClick={() => navigate("/history")} className="mt-5 rounded-lg bg-ink px-3.5 py-2 text-[12.5px] text-white">
-            Back to history
-          </button>
-        </div>
-      </div>
+      <Page>
+        <main className="relative z-10 mx-auto max-w-sm px-4 pt-[20vh]">
+          <EmptyState
+            title="We couldn't open this tool."
+            body={error}
+            action={
+              <Button size="sm" onClick={() => navigate("/history")}>
+                Back to history
+              </Button>
+            }
+          />
+        </main>
+      </Page>
     );
   }
 
@@ -57,13 +59,17 @@ export function ProjectScreen({ api, id }: { api: Api; id: string }) {
     <AnimatePresence mode="wait">
       <motion.div key={view} {...screen} className="min-h-full">
         {view === "loading" && (
-          <div className="relative min-h-full">
-            <Mesh />
-            <Header />
-            <div className="relative z-10 flex justify-center pt-[30vh] text-mute">
-              <Spinner />
-            </div>
-          </div>
+          <Page>
+            <main className="relative z-10 mx-auto max-w-narrow px-4 pt-[18vh]" aria-busy="true" aria-label="Loading tool">
+              <Skeleton className="mx-auto h-9 w-4/5" />
+              <Skeleton className="mx-auto mt-3 h-3.5 w-1/2" delay={80} />
+              <div className="mt-8 space-y-2">
+                {[0, 1, 2].map((i) => (
+                  <Skeleton key={i} className="h-11.5 w-full rounded-xl" delay={160 + i * 120} />
+                ))}
+              </div>
+            </main>
+          </Page>
         )}
         {view === "intake" && <Intake api={api} project={detail!.project} onBuild={startRun} />}
         {view === "building" && <Construction api={api} project={detail!.project} runId={runId!} onDone={load} />}

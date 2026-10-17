@@ -64,6 +64,8 @@ export class RunObject extends DurableObject<Env> {
   private config: RunConfig | null = null;
   private draft: Draft | null = null;
   private verdict: Verdict | null = null;
+  /** In-memory copy of the stored log, so appending a line doesn't re-read it from storage. */
+  private logLines: LogLine[] | null = null;
   private lastBroadcast = 0;
   private broadcastTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -71,11 +73,12 @@ export class RunObject extends DurableObject<Env> {
 
   private async load() {
     if (this.state) return;
-    const got = await this.ctx.storage.get<unknown>(["state", "config", "draft", "verdict"]);
+    const got = await this.ctx.storage.get<unknown>(["state", "config", "draft", "verdict", "log"]);
     this.state = (got.get("state") as RunState) ?? null;
     this.config = (got.get("config") as RunConfig) ?? null;
     this.draft = (got.get("draft") as Draft) ?? null;
     this.verdict = (got.get("verdict") as Verdict) ?? null;
+    this.logLines ??= (got.get("log") as LogLine[]) ?? [];
   }
 
   private async save() {
@@ -106,7 +109,8 @@ export class RunObject extends DurableObject<Env> {
       startedAt: now(),
       finishedAt: null,
     };
-    await this.ctx.storage.put({ config, state: this.state, draft: this.draft, log: [] });
+    this.logLines = [];
+    await this.ctx.storage.put({ config, state: this.state, draft: this.draft, log: this.logLines });
     await this.log("orchestrator", config.base ? `improving draft v${config.base.version}` : "up, reading the brief");
     await this.ctx.storage.setAlarm(Date.now());
     return this.state;
@@ -124,10 +128,9 @@ export class RunObject extends DurableObject<Env> {
     await this.load();
     const pair = new WebSocketPair();
     this.ctx.acceptWebSocket(pair[1]);
-    const log = (await this.ctx.storage.get<LogLine[]>("log")) ?? [];
     if (this.state) pair[1].send(JSON.stringify({ type: "state", state: this.state } satisfies ServerEvent));
     if (this.draft) pair[1].send(JSON.stringify(this.draftEvent()));
-    pair[1].send(JSON.stringify({ type: "log", lines: log, replace: true } satisfies ServerEvent));
+    pair[1].send(JSON.stringify({ type: "log", lines: this.logLines ?? [], replace: true } satisfies ServerEvent));
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
 
@@ -141,6 +144,7 @@ export class RunObject extends DurableObject<Env> {
     } catch {
       return;
     }
+    if (!cmd || typeof cmd !== "object") return;
     switch (cmd.type) {
       case "pause":
         if (s.status === "running") {
@@ -158,6 +162,7 @@ export class RunObject extends DurableObject<Env> {
         }
         break;
       case "steer": {
+        if (typeof cmd.text !== "string") return;
         const text = cmd.text.trim().slice(0, 500);
         if (text && s.status !== "done") {
           s.steering.push(text);
@@ -166,6 +171,7 @@ export class RunObject extends DurableObject<Env> {
         break;
       }
       case "rounds":
+        if (cmd.delta !== 1 && cmd.delta !== -1) return;
         if (s.status !== "done") {
           s.maxRounds = Math.min(MAX_ROUNDS, Math.max(Math.max(s.round, 1), s.maxRounds + cmd.delta));
           await this.log("orchestrator", `target set to ${s.maxRounds} rounds`);
@@ -212,9 +218,11 @@ export class RunObject extends DurableObject<Env> {
 
   private async log(source: string, text: string) {
     const line: LogLine = { t: now(), source, text };
-    const log = (await this.ctx.storage.get<LogLine[]>("log")) ?? [];
+    const log = this.logLines ?? ((await this.ctx.storage.get<LogLine[]>("log")) ?? []);
     log.push(line);
-    await this.ctx.storage.put("log", log.slice(-LOG_LIMIT));
+    if (log.length > LOG_LIMIT) log.splice(0, log.length - LOG_LIMIT);
+    this.logLines = log;
+    await this.ctx.storage.put("log", log);
     this.broadcast({ type: "log", lines: [line] });
   }
 
@@ -246,13 +254,17 @@ export class RunObject extends DurableObject<Env> {
       await this.runJudge();
       s.round = 1;
     } else {
+      // Resuming after the first judge failed: the drafting step is over.
+      if (s.round === 0) s.round = 1;
       if (s.tokensIn + s.tokensOut >= s.tokenBudget) {
         await this.log("orchestrator", "token budget reached, keeping the best draft");
         return this.finish();
       }
       if (this.verdict === null) await this.runJudge();
       if ((s.score ?? 0) >= s.targetScore) return this.finish();
-      await this.runRound();
+      // Resuming after a judge failed on this round's merge: the round itself already finished.
+      const merged = s.agents.some((a) => a.role === "refiner" && a.round === s.round && a.status === "merged");
+      if (!merged) await this.runRound();
       if ((s.score ?? 0) >= s.targetScore || s.round >= s.maxRounds) return this.finish();
       s.round++;
     }
@@ -322,6 +334,8 @@ export class RunObject extends DurableObject<Env> {
     const s = this.state!;
     const version = (this.draft?.version ?? 0) + 1;
     this.draft = { id: newId(), version, body: body.trim(), score: null };
+    // The old verdict scored the old draft; a resumed run must re-judge this one.
+    this.verdict = null;
     s.draftVersion = version;
     await this.env.DB.prepare(
       "INSERT INTO prompt_versions (id, project_id, run_id, parent_id, version, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -364,8 +378,11 @@ export class RunObject extends DurableObject<Env> {
       temperature: 0.2,
     });
     this.account(agent, res);
-    const v = parseJson<Verdict>(res.text);
-    v.score = Math.max(0, Math.min(100, Math.round(v.score)));
+    const raw = parseJson<Partial<Verdict>>(res.text);
+    const score = Number(raw.score);
+    if (!Number.isFinite(score)) throw new Error("The judge returned no score.");
+    const strings = (x: unknown) => (Array.isArray(x) ? x.filter((y): y is string => typeof y === "string") : []);
+    const v: Verdict = { score: Math.max(0, Math.min(100, Math.round(score))), gaps: strings(raw.gaps), lenses: strings(raw.lenses) };
     this.verdict = v;
     s.score = v.score;
     this.draft!.score = v.score;

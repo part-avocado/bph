@@ -17,6 +17,11 @@ export function useRun(runId: string, getToken: () => Promise<string | null>) {
     let closed = false;
     let attempt = 0;
     let timer: ReturnType<typeof setTimeout>;
+    // A new run starts from a clean slate rather than showing the previous run's state.
+    setState(null);
+    setDraft(null);
+    setLog([]);
+    setConnection("connecting");
 
     async function connect() {
       const token = await tokenRef.current();
@@ -29,13 +34,20 @@ export function useRun(runId: string, getToken: () => Promise<string | null>) {
         setConnection("open");
       };
       socket.onmessage = (msg) => {
-        const ev = JSON.parse(msg.data as string) as ServerEvent;
+        // A replaced socket can still deliver buffered frames; only the current one updates state.
+        if (closed || ws.current !== socket) return;
+        let ev: ServerEvent;
+        try {
+          ev = JSON.parse(msg.data as string) as ServerEvent;
+        } catch {
+          return;
+        }
         if (ev.type === "state") setState(ev.state);
         else if (ev.type === "draft") setDraft({ version: ev.version, body: ev.body, score: ev.score });
         else if (ev.type === "log") setLog((prev) => (ev.replace ? ev.lines : [...prev, ...ev.lines].slice(-400)));
       };
       socket.onclose = () => {
-        if (closed) return;
+        if (closed || ws.current !== socket) return;
         setConnection("reconnecting");
         timer = setTimeout(connect, Math.min(8000, 400 * 2 ** attempt++));
       };
@@ -45,6 +57,7 @@ export function useRun(runId: string, getToken: () => Promise<string | null>) {
       closed = true;
       clearTimeout(timer);
       ws.current?.close();
+      ws.current = null;
       setConnection("closed");
     };
   }, [runId]);

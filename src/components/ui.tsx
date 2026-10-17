@@ -1,7 +1,10 @@
 import { Show, SignInButton, UserButton } from "@clerk/react";
-import { motion } from "motion/react";
-import type { ReactNode } from "react";
+import { motion, type HTMLMotionProps } from "motion/react";
+import type { AnchorHTMLAttributes, HTMLAttributes, MouseEvent, ReactNode } from "react";
 import { navigate } from "../lib/router";
+
+/** The one easing curve every entrance uses. Mirrors --ease-out-soft in styles.css. */
+export const EASE = [0.22, 1, 0.36, 1] as const;
 
 export function Kbd({ children, dark = false }: { children: ReactNode; dark?: boolean }) {
   return <kbd className={`kbd ${dark ? "kbd-dark" : ""}`}>{children}</kbd>;
@@ -12,6 +15,20 @@ export const EnterIcon = () => (
     <path d="M10 2v4.5a1.5 1.5 0 0 1-1.5 1.5H2.5M2.5 8 5 5.5M2.5 8 5 10.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
+
+export const CheckIcon = ({ size = 13, ring = false, className = "" }: { size?: number; ring?: boolean; className?: string }) =>
+  ring ? (
+    <svg width={size} height={size} viewBox="0 0 12 12" fill="none" className={className} aria-hidden>
+      <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M3.8 6.2 5.3 7.6 8.2 4.6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ) : (
+    <svg width={size} height={size} viewBox="0 0 12 12" fill="none" className={className} aria-hidden>
+      <path d="M2.5 6.5 5 9l4.5-6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+
+// ---------- background ----------
 
 type Tint = "dawn" | "lilac" | "sky" | "mint";
 
@@ -39,55 +56,89 @@ export function Mesh({ tint = "dawn", grid = false }: { tint?: Tint; grid?: bool
   );
 }
 
+/** Mesh, header and content: the frame every screen sits in. */
+export function Page({
+  tint,
+  grid,
+  title,
+  headerRight,
+  children,
+  className = "",
+  ...rest
+}: { tint?: Tint; grid?: boolean; title?: string; headerRight?: ReactNode } & HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div className={`relative min-h-full ${className}`} {...rest}>
+      <Mesh tint={tint} grid={grid} />
+      <Header title={title} right={headerRight} />
+      {children}
+    </div>
+  );
+}
+
+// ---------- navigation ----------
+
+/** A real link (so it can be opened in a new tab) that routes in-app on a plain click. */
+export function Link({ to, onClick, ...rest }: { to: string } & AnchorHTMLAttributes<HTMLAnchorElement>) {
+  return (
+    <a
+      href={to}
+      onClick={(e: MouseEvent<HTMLAnchorElement>) => {
+        onClick?.(e);
+        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        navigate(to);
+      }}
+      {...rest}
+    />
+  );
+}
+
 export function Header({ title, right }: { title?: string; right?: ReactNode }) {
   return (
     <header className="relative z-10 flex h-16 items-center justify-between gap-3 px-4 sm:px-7">
-      <button
-        onClick={() => navigate("/")}
-        className="group flex min-w-0 items-center gap-2.5 rounded-lg py-1 pr-2 text-[14px] font-semibold tracking-[-0.01em]"
-        aria-label="Offshoot home"
+      <Link
+        to="/"
+        className="group flex min-w-0 items-center gap-2.5 rounded-lg py-1 pr-2 text-base font-semibold tracking-snug"
+        aria-label={title ? `Offshoot home, ${title}` : "Offshoot home"}
       >
-        <span className="size-[15px] shrink-0 rounded-full bg-ink transition-transform duration-300 group-hover:scale-110" />
+        <span className="size-3.75 shrink-0 rounded-full bg-ink transition-transform duration-300 group-hover:scale-110" />
         <motion.span
           key={title ?? "Offshoot"}
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35 }}
+          transition={{ duration: 0.35, ease: EASE }}
           className="truncate whitespace-nowrap"
         >
           {title ?? "Offshoot"}
         </motion.span>
-      </button>
-      <div className="flex shrink-0 items-center gap-1 whitespace-nowrap sm:gap-2">
+      </Link>
+      <nav aria-label="Main" className="flex shrink-0 items-center gap-1 whitespace-nowrap sm:gap-2">
         {right}
         <Show when="signed-in">
-          <button onClick={() => navigate("/history")} className="rounded-full px-2.5 py-1.5 text-[12px] text-mute transition-colors hover:text-ink">
+          <Link to="/history" className="rounded-full px-2.5 py-1.5 text-xs text-mute transition-colors hover:text-ink">
             History
-          </button>
-          <button
-            onClick={() => navigate("/")}
-            className="hidden rounded-full bg-paper/90 px-3.5 py-1.5 text-[12px] font-medium shadow-[0_1px_2px_rgb(0_0_0/0.06)] ring-1 ring-black/5 transition hover:bg-paper sm:block"
-          >
+          </Link>
+          <Link to="/" className={`${chip} hidden px-3.5 py-1.5 font-medium text-ink hover:bg-paper sm:block`}>
             New
-          </button>
+          </Link>
           <div className="ml-1 flex size-7 items-center justify-center">
             <UserButton />
           </div>
         </Show>
         <Show when="signed-out">
           <SignInButton mode="modal">
-            <button className="rounded-full bg-paper/90 px-3.5 py-1.5 text-[12px] font-medium ring-1 ring-black/5 transition hover:bg-paper">Sign in</button>
+            <button className={`${chip} px-3.5 py-1.5 font-medium text-ink hover:bg-paper`}>Sign in</button>
           </SignInButton>
         </Show>
-      </div>
+      </nav>
     </header>
   );
 }
 
 export function HintBar({ hints }: { hints: [ReactNode, string][] }) {
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-5 z-10 hidden justify-center sm:flex">
-      <div className="flex items-center gap-4 rounded-full bg-paper/60 px-4 py-2 text-[11px] text-mute backdrop-blur-md">
+    <div className="pointer-events-none fixed inset-x-0 bottom-5 z-10 hidden justify-center sm:flex" aria-hidden>
+      <div className="flex items-center gap-4 rounded-full bg-paper/70 px-4 py-2 text-xs text-mute shadow-outline backdrop-blur-md">
         {hints.map(([k, label], i) => (
           <span key={i} className="flex items-center gap-1.5">
             {k}
@@ -99,12 +150,115 @@ export function HintBar({ hints }: { hints: [ReactNode, string][] }) {
   );
 }
 
-export function Spinner({ className = "" }: { className?: string }) {
+// ---------- controls ----------
+
+/** Frosted pill used for badges, header actions and suggestion chips. */
+export const chip = "rounded-full bg-paper/80 text-xs text-ink-2 ring-1 ring-black/5 backdrop-blur transition";
+
+const VARIANTS = {
+  primary: "bg-ink text-white shadow-press hover:bg-ink/90",
+  accent: "bg-accent text-white shadow-accent hover:bg-accent-2",
+  secondary: "bg-paper/90 text-ink ring-1 ring-black/5 shadow-xs hover:bg-paper",
+  outline: "border border-line bg-paper text-ink hover:bg-wash",
+  danger: "bg-bad text-white hover:bg-bad/90",
+  ghost: "text-mute hover:text-ink",
+} as const;
+
+const SIZES = {
+  xs: "h-7 rounded-lg px-2 text-xs",
+  sm: "h-8 rounded-lg px-3 text-sm",
+  md: "h-9 rounded-control px-3.5 text-base",
+  lg: "h-10 rounded-control px-4 text-base",
+  xl: "h-11 rounded-xl px-4 text-base",
+} as const;
+
+/** Trailing padding is tighter when the button ends in a key hint. */
+const KBD_PAD = { xs: "pr-1", sm: "pr-1.5", md: "pr-2", lg: "pr-2.5", xl: "pr-2.5" } as const;
+
+export type ButtonProps = {
+  variant?: keyof typeof VARIANTS;
+  size?: keyof typeof SIZES;
+  /** Key hint shown at the end, e.g. "I" or <EnterIcon />. */
+  kbd?: ReactNode;
+  loading?: boolean;
+  children?: ReactNode;
+} & Omit<HTMLMotionProps<"button">, "children">;
+
+export function Button({ variant = "primary", size = "md", kbd, loading = false, className = "", children, type = "button", disabled, ...rest }: ButtonProps) {
+  const dark = variant === "primary" || variant === "accent" || variant === "danger";
   return (
-    <svg className={`animate-spin ${className}`} width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+    <motion.button
+      type={type}
+      whileTap={disabled ? undefined : { scale: 0.97 }}
+      disabled={disabled}
+      aria-busy={loading || undefined}
+      className={`inline-flex shrink-0 items-center justify-center gap-2 font-medium whitespace-nowrap transition-[background-color,box-shadow,color,opacity] duration-150 select-none disabled:cursor-not-allowed disabled:opacity-50 ${VARIANTS[variant]} ${SIZES[size]} ${kbd ? KBD_PAD[size] : ""} ${className}`}
+      {...rest}
+    >
+      {loading && <Spinner />}
+      {children}
+      {kbd != null && <Kbd dark={dark}>{kbd}</Kbd>}
+    </motion.button>
+  );
+}
+
+export function Spinner({ className = "", label }: { className?: string; label?: string }) {
+  return (
+    <svg
+      className={`shrink-0 animate-spin ${className}`}
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      role={label ? "status" : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
+    >
       <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.2" strokeWidth="3" />
       <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
     </svg>
+  );
+}
+
+// ---------- states ----------
+
+export function Skeleton({ className = "", delay = 0 }: { className?: string; delay?: number }) {
+  return <div className={`shimmer ${className}`} style={delay ? { animationDelay: `${delay}ms` } : undefined} aria-hidden />;
+}
+
+/** Centered message for empty and error screens, with an optional action below. */
+export function EmptyState({ title, body, action, className = "" }: { title: string; body?: ReactNode; action?: ReactNode; className?: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, ease: EASE }}
+      className={`text-center ${className}`}
+    >
+      <p className="text-md font-medium tracking-snug">{title}</p>
+      {body && <p className="mx-auto mt-1 max-w-sm text-sm text-pretty text-mute">{body}</p>}
+      {action && <div className="mt-5 flex justify-center">{action}</div>}
+    </motion.div>
+  );
+}
+
+/** Inline error line. Pass onDismiss to let the user clear it. */
+export function ErrorText({ children, onDismiss, className = "" }: { children: ReactNode; onDismiss?: () => void; className?: string }) {
+  return (
+    <motion.p
+      role="alert"
+      initial={{ opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      className={`flex items-start justify-center gap-2 text-sm text-bad ${className}`}
+    >
+      <span className="text-pretty">{children}</span>
+      {onDismiss && (
+        <button onClick={onDismiss} className="shrink-0 rounded px-1 text-bad/60 transition-colors hover:text-bad" aria-label="Dismiss error">
+          ✕
+        </button>
+      )}
+    </motion.p>
   );
 }
 
@@ -115,7 +269,7 @@ export function Toast({ message, onClose }: { message: string; onClose: () => vo
       initial={{ opacity: 0, y: 12, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 8 }}
-      className="fixed inset-x-0 bottom-16 z-50 mx-auto flex w-fit max-w-[90vw] items-center gap-3 rounded-xl bg-ink px-4 py-2.5 text-[13px] text-white shadow-xl"
+      className="fixed inset-x-0 bottom-16 z-50 mx-auto flex w-fit max-w-[90vw] items-center gap-3 rounded-xl bg-ink px-4 py-2.5 text-base text-white shadow-xl"
     >
       <span>{message}</span>
       <button onClick={onClose} className="text-white/60 hover:text-white" aria-label="Dismiss">
@@ -125,8 +279,17 @@ export function Toast({ message, onClose }: { message: string; onClose: () => vo
   );
 }
 
+// ---------- motion presets ----------
+
 export const screen = {
   initial: { opacity: 0, y: 10, filter: "blur(6px)" },
-  animate: { opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] } },
+  animate: { opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.5, ease: EASE } },
   exit: { opacity: 0, y: -8, filter: "blur(4px)", transition: { duration: 0.22 } },
 } as const;
+
+/** Entrance for a block that rises into place. */
+export const rise = (delay = 0, y = 16) => ({
+  initial: { opacity: 0, y },
+  animate: { opacity: 1, y: 0 },
+  transition: { delay, duration: 0.6, ease: EASE },
+});

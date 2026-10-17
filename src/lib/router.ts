@@ -29,7 +29,7 @@ export function usePath() {
 export type Route = { name: "describe" } | { name: "history" } | { name: "project"; id: string };
 
 export function matchRoute(path: string): Route {
-  if (path === "/history") return { name: "history" };
+  if (/^\/history\/?$/.test(path)) return { name: "history" };
   const m = path.match(/^\/p\/([a-z0-9]+)\/?$/);
   if (m) return { name: "project", id: m[1] };
   return { name: "describe" };

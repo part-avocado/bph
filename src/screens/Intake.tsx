@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Project, Question } from "../../shared/types";
-import { EnterIcon, Header, HintBar, Kbd, Mesh, Spinner } from "../components/ui";
+import { Button, CheckIcon, EASE, EnterIcon, ErrorText, HintBar, Kbd, Page, Skeleton, Spinner } from "../components/ui";
 import type { Api } from "../lib/api";
 import { isTyping, useKeys } from "../lib/keys";
 
@@ -100,6 +100,11 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
         });
       } catch (e) {
         setError((e as Error).message);
+        // Not saved: reopen the question so it isn't silently left out of the brief.
+        setPending((p) => {
+          const { [q.id]: _, ...rest } = p;
+          return rest;
+        });
       } finally {
         setInFlight((n) => n - 1);
       }
@@ -193,42 +198,46 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
   const position = current ? index + 1 : answeredCount;
 
   return (
-    <div className="relative min-h-full">
-      <Mesh tint="lilac" />
-      <Header
-        title={title}
-        right={
-          !loading && (
-            <div className="mr-2 hidden items-center gap-3 sm:flex" aria-label={`Question ${position} of ${total}`}>
-              <div className="flex gap-1">
-                {view.map((q, i) => (
-                  <motion.span
-                    key={q.id}
-                    layout
-                    className={`h-[3px] rounded-full ${i < position ? "bg-ink" : "bg-ink/12"}`}
-                    animate={{ width: i === index ? 26 : 18 }}
-                  />
-                ))}
-              </div>
-              <span className="font-mono text-[11px] text-mute tabular-nums">
-                {position} / {total}
-              </span>
+    <Page
+      tint="lilac"
+      title={title}
+      headerRight={
+        !loading && (
+          <div className="mr-2 hidden items-center gap-3 sm:flex" role="progressbar" aria-label="Questions answered" aria-valuemin={0} aria-valuemax={total} aria-valuenow={position}>
+            <div className="flex gap-1" aria-hidden>
+              {view.map((q, i) => (
+                <motion.span
+                  key={q.id}
+                  layout
+                  className={`h-0.75 rounded-full ${i < position ? "bg-ink" : "bg-ink/12"}`}
+                  animate={{ width: i === index ? 26 : 18 }}
+                  transition={{ duration: 0.35, ease: EASE }}
+                />
+              ))}
             </div>
-          )
-        }
-      />
-
-      <main className="relative z-10 mx-auto flex min-h-[calc(100vh-4rem)] max-w-[560px] flex-col justify-center px-4 pb-28">
+            <span className="font-mono text-xs text-mute tabular-nums">
+              {position} / {total}
+            </span>
+          </div>
+        )
+      }
+    >
+      <main className="relative z-10 mx-auto flex min-h-[calc(100dvh-4rem)] max-w-narrow flex-col justify-center px-4 pb-28">
+        {!loading && (
+          <p className="mb-6 text-center font-mono text-xs text-mute tabular-nums sm:hidden" aria-hidden>
+            {position} / {total}
+          </p>
+        )}
         <AnimatePresence mode="wait" custom={dir}>
           {loading ? (
-            <motion.div key="loading" exit={{ opacity: 0 }} className="space-y-3">
-              <p className="mb-6 flex items-center justify-center gap-2 text-[13px] text-mute">
+            <motion.div key="loading" exit={{ opacity: 0 }} className="space-y-3" aria-busy="true">
+              <p className="mb-6 flex items-center justify-center gap-2 text-base text-mute" role="status">
                 <Spinner /> Reading your idea…
               </p>
-              <div className="shimmer mx-auto h-9 w-4/5" />
+              <Skeleton className="mx-auto h-9 w-4/5" />
               <div className="h-4" />
               {[0, 1, 2].map((i) => (
-                <div key={i} className="shimmer h-[46px] w-full rounded-xl" style={{ animationDelay: `${i * 120}ms` }} />
+                <Skeleton key={i} className="h-11.5 w-full rounded-xl" delay={i * 120} />
               ))}
             </motion.div>
           ) : current ? (
@@ -236,16 +245,16 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
               key={current.id}
               custom={dir}
               initial={{ opacity: 0, y: dir * 18, filter: "blur(6px)" }}
-              animate={{ opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] } }}
+              animate={{ opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.45, ease: EASE } }}
               exit={{ opacity: 0, y: dir * -14, filter: "blur(4px)", transition: { duration: 0.18 } }}
               aria-labelledby="q"
             >
-              <h2 id="q" className="text-center text-[28px] leading-tight font-semibold tracking-[-0.035em] text-balance sm:text-[34px]">
+              <h2 id="q" className="text-center text-title font-semibold tracking-title text-balance sm:text-title-lg">
                 {current.prompt}
               </h2>
-              {current.why && <p className="mt-2 text-center text-[12.5px] text-mute">{current.why}</p>}
+              {current.why && <p className="mt-2 text-center text-sm text-pretty text-mute">{current.why}</p>}
 
-              <div role="radiogroup" className="mt-7 space-y-2">
+              <div role="radiogroup" aria-labelledby="q" className="mt-7 space-y-2">
                 {current.options.map((opt, i) => {
                   const selected = local.choice === i && !local.custom;
                   const focused = focus === i;
@@ -263,26 +272,31 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
                         setLocal({ choice: i, custom: "" });
                       }}
                       onDoubleClick={() => continueWith(i)}
-                      className={`flex w-full items-center gap-3 rounded-xl bg-paper/85 px-3.5 py-3 text-left text-[13.5px] backdrop-blur transition-[box-shadow,background-color] duration-150 ${
-                        focused ? "shadow-[0_0_0_1.5px_var(--color-ink)]" : "shadow-[0_0_0_1px_rgb(0_0_0/0.06)] hover:bg-paper"
+                      className={`flex w-full items-center gap-3 rounded-xl bg-paper/85 px-3.5 py-3 text-left text-base backdrop-blur transition-[box-shadow,background-color] duration-150 ${
+                        focused ? "bg-paper shadow-outline-strong" : "shadow-outline hover:bg-paper"
                       }`}
                     >
                       <span
-                        className={`flex size-[17px] shrink-0 items-center justify-center rounded-full transition-colors ${
+                        className={`flex size-4.5 shrink-0 items-center justify-center rounded-full text-white transition-colors ${
                           selected ? "bg-ink" : "ring-1 ring-black/20"
                         }`}
+                        aria-hidden
                       >
                         <AnimatePresence>
                           {selected && (
-                            <motion.svg initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }} width="9" height="9" viewBox="0 0 12 12" fill="none">
-                              <path d="M2.5 6.5 5 9l4.5-6" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                            </motion.svg>
+                            <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }} className="flex">
+                              <CheckIcon size={9} />
+                            </motion.span>
                           )}
                         </AnimatePresence>
                       </span>
-                      <span className="flex-1">{opt}</span>
+                      <span className="min-w-0 flex-1 text-pretty">{opt}</span>
                       {focused && !selected && <Kbd>space</Kbd>}
-                      {!focused && <span className="font-mono text-[10px] text-faint/0 sm:text-faint">{i + 1}</span>}
+                      {!focused && (
+                        <span className="hidden font-mono text-2xs text-faint sm:inline" aria-hidden>
+                          {i + 1}
+                        </span>
+                      )}
                     </motion.button>
                   );
                 })}
@@ -295,30 +309,23 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
                 onFocus={() => setFocus(current.options.length)}
                 placeholder="Or type your own…"
                 aria-label="Your own answer"
-                className={`mt-2 w-full rounded-xl bg-transparent px-3.5 py-3 text-[13.5px] outline-none placeholder:text-faint transition-shadow ${
-                  focus === current.options.length ? "bg-paper/85 shadow-[0_0_0_1.5px_var(--color-ink)]" : ""
+                className={`mt-2 w-full rounded-xl px-3.5 py-3 text-base outline-none placeholder:text-faint transition-[box-shadow,background-color] duration-150 ${
+                  focus === current.options.length ? "bg-paper shadow-outline-strong" : "bg-transparent"
                 }`}
               />
 
               <div className="mt-7 flex items-center justify-center gap-3">
-                <motion.button
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => continueWith()}
-                  className="flex h-9 items-center gap-2 rounded-[10px] bg-ink pr-2 pl-3.5 text-[13px] font-medium text-white shadow-[0_6px_16px_-6px_rgb(0_0_0/0.5)]"
-                >
+                <Button onClick={() => continueWith()} kbd={<EnterIcon />}>
                   Continue
-                  <Kbd dark>
-                    <EnterIcon />
-                  </Kbd>
-                </motion.button>
-                <button onClick={() => submit(null)} className="px-2 text-[12.5px] text-faint transition-colors hover:text-ink">
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => submit(null)}>
                   Skip
-                </button>
+                </Button>
               </div>
             </motion.section>
           ) : thinking ? (
             <motion.div key="thinking" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center">
-              <p className="flex items-center justify-center gap-2 text-[13px] text-mute">
+              <p className="flex items-center justify-center gap-2 text-base text-mute" role="status">
                 <Spinner /> Checking whether anything else matters…
               </p>
             </motion.div>
@@ -326,14 +333,14 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
             <motion.section
               key="done"
               initial={{ opacity: 0, y: 18, filter: "blur(6px)" }}
-              animate={{ opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] } }}
+              animate={{ opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.5, ease: EASE } }}
               exit={{ opacity: 0, scale: 0.98 }}
             >
-              <h2 className="text-center text-[32px] font-semibold tracking-[-0.04em]">That's everything.</h2>
-              <p className="mt-2 text-center text-[13px] text-mute">
+              <h2 className="text-center text-title font-semibold tracking-display">That's everything.</h2>
+              <p className="mt-2 text-center text-base text-pretty text-mute">
                 {realAnswers} answer{realAnswers === 1 ? "" : "s"}{answeredCount > realAnswers ? `, ${answeredCount - realAnswers} left for Offshoot to decide` : ""}. Reviewers will draft, challenge and merge your prompt next.
               </p>
-              <ul className="card mt-7 divide-y divide-line-2 overflow-hidden p-0">
+              <ul className="card mt-7 divide-y divide-line-2 overflow-hidden p-0" aria-label="Your answers">
                 {view.map((q) => (
                   <li key={q.id}>
                     <button
@@ -341,27 +348,21 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
                         setDir(-1);
                         setCurrentId(q.id);
                       }}
-                      className="flex w-full items-baseline justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-wash"
+                      className="flex w-full flex-col gap-0.5 px-4 py-3 text-left transition-colors hover:bg-wash focus-visible:-outline-offset-2 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4"
+                      aria-label={`Change answer: ${q.prompt}`}
                     >
-                      <span className="text-[12.5px] text-mute">{q.prompt}</span>
-                      <span className="shrink-0 text-right text-[13px]">{q.skipped ? <span className="text-faint">Decide for me</span> : q.answer}</span>
+                      <span className="text-sm text-mute">{q.prompt}</span>
+                      <span className="text-base sm:max-w-[55%] sm:shrink-0 sm:text-right">
+                        {q.skipped ? <span className="text-faint">Decide for me</span> : q.answer}
+                      </span>
                     </button>
                   </li>
                 ))}
               </ul>
               <div className="mt-7 flex justify-center">
-                <motion.button
-                  whileTap={{ scale: 0.97 }}
-                  onClick={build}
-                  disabled={building}
-                  className="flex h-10 items-center gap-2 rounded-[10px] bg-ink pr-2.5 pl-4 text-[13.5px] font-medium text-white shadow-[0_6px_16px_-6px_rgb(0_0_0/0.5)] disabled:opacity-70"
-                >
-                  {building && <Spinner />}
+                <Button size="lg" onClick={build} disabled={building} loading={building} kbd={<EnterIcon />}>
                   {building ? "Starting reviewers" : "Build the prompt"}
-                  <Kbd dark>
-                    <EnterIcon />
-                  </Kbd>
-                </motion.button>
+                </Button>
               </div>
             </motion.section>
           )}
@@ -369,16 +370,9 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
 
         <AnimatePresence>
           {error && (
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="mt-6 text-center text-[12.5px] text-bad"
-              role="alert"
-              onClick={() => setError(null)}
-            >
+            <ErrorText className="mt-6" onDismiss={() => setError(null)}>
               {error}
-            </motion.p>
+            </ErrorText>
           )}
         </AnimatePresence>
       </main>
@@ -404,6 +398,6 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
               ]
         }
       />
-    </div>
+    </Page>
   );
 }

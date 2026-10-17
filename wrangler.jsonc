@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "offshoot",
+  "name": "bph",
   "main": "worker/index.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
@@ -19,7 +19,7 @@
     "RUN_TOKEN_BUDGET": "400000"
   },
   "d1_databases": [
-    { "binding": "DB", "database_name": "offshoot", "database_id": "local-offshoot", "migrations_dir": "migrations" }
+    { "binding": "DB", "database_name": "bph", "database_id": "814de9a0-8860-4226-87e9-2663ff564d19", "migrations_dir": "migrations" }
   ],
   "r2_buckets": [{ "binding": "UPLOADS", "bucket_name": "offshoot-uploads" }],
   "durable_objects": {
