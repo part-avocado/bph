@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
-import { Button, EmptyState, ErrorText, HintBar, Kbd, Link, Page, Skeleton } from "../components/ui";
+import { ArrowDownIcon, ArrowUpIcon, Button, EmptyState, EnterIcon, ErrorText, HintBar, Kbd, Link, Page, Skeleton } from "../components/ui";
 import type { Api, ProjectSummary } from "../lib/api";
 import { isTyping, useKeys } from "../lib/keys";
 import { navigate } from "../lib/router";
@@ -161,12 +161,12 @@ export function History({ api }: { api: Api }) {
         hints={[
           [
             <span key="a" className="flex gap-1">
-              <Kbd>↑</Kbd>
-              <Kbd>↓</Kbd>
+              <Kbd><ArrowUpIcon /></Kbd>
+              <Kbd><ArrowDownIcon /></Kbd>
             </span>,
             "move",
           ],
-          [<Kbd key="e">↵</Kbd>, "open"],
+          [<Kbd key="e"><EnterIcon /></Kbd>, "open"],
           [<Kbd key="n">N</Kbd>, "new tool"],
         ]}
       />

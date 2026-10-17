@@ -1,7 +1,7 @@
 import { useAuth, useClerk } from "@clerk/react";
 import { AnimatePresence, motion, type Variants } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Button, EASE, EnterIcon, ErrorText, Kbd, Page, chip } from "../components/ui";
+import { Button, EASE, EnterIcon, ErrorText, Kbd, Page, ShiftIcon, chip } from "../components/ui";
 import { useApi } from "../lib/api";
 import { ACCEPT, filesFromDrop, formatBytes, isSupported } from "../lib/files";
 import { isMac } from "../lib/keys";
@@ -152,16 +152,6 @@ export function Describe() {
       }}
     >
       <main className="relative z-10 mx-auto flex max-w-form flex-col items-center px-4 pt-[12vh] pb-24">
-        <motion.div
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: EASE }}
-          className={`${chip} mb-5 flex items-center gap-2 px-3 py-1 text-center`}
-        >
-          <span className="size-1.5 shrink-0 rounded-full bg-ink" aria-hidden />
-          Answer once. Claude never has to ask.
-        </motion.div>
-
         <Headline />
 
         <motion.form
@@ -303,7 +293,7 @@ export function Describe() {
         </motion.div>
 
         <p className="mt-10 hidden text-xs text-faint sm:block">
-          <Kbd>↵</Kbd> start · <Kbd>{isMac ? "⇧" : "Shift"}</Kbd> <Kbd>↵</Kbd> new line
+          <Kbd><EnterIcon /></Kbd> start · <Kbd>{isMac ? <ShiftIcon /> : "Shift"}</Kbd> <Kbd><EnterIcon /></Kbd> new line
         </p>
       </main>
     </Page>

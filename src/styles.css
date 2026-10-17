@@ -152,6 +152,7 @@ body {
   justify-content: center;
   min-width: 18px;
   height: 18px;
+  gap: 2px;
   padding: 0 5px;
   border-radius: 5px;
   font-family: var(--font-mono);

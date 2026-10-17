@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Project, Question } from "../../shared/types";
-import { Button, CheckIcon, EASE, EnterIcon, ErrorText, HintBar, Kbd, Page, Skeleton, Spinner } from "../components/ui";
+import { ArrowDownIcon, ArrowUpIcon, Button, CheckIcon, EASE, EnterIcon, ErrorText, HintBar, Kbd, Page, Skeleton, Spinner } from "../components/ui";
 import type { Api } from "../lib/api";
 import { isTyping, useKeys } from "../lib/keys";
 
@@ -381,19 +381,19 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
         hints={
           done
             ? [
-                [<Kbd key="e">↵</Kbd>, "build"],
+                [<Kbd key="e"><EnterIcon /></Kbd>, "build"],
                 [<Kbd key="l">←</Kbd>, "back"],
               ]
             : [
                 [
                   <span key="a" className="flex gap-1">
-                    <Kbd>↑</Kbd>
-                    <Kbd>↓</Kbd>
+                    <Kbd><ArrowUpIcon /></Kbd>
+                    <Kbd><ArrowDownIcon /></Kbd>
                   </span>,
                   "move",
                 ],
                 [<Kbd key="s">space</Kbd>, "select"],
-                [<Kbd key="e">↵</Kbd>, "continue"],
+                [<Kbd key="e"><EnterIcon /></Kbd>, "continue"],
                 [<Kbd key="l">←</Kbd>, "back"],
               ]
         }

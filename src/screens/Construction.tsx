@@ -610,7 +610,7 @@ export function Construction({ api, project, runId, onDone }: { api: Api; projec
 
       <HintBar
         hints={[
-          [<Kbd key="e">↵</Kbd>, "steer"],
+          [<Kbd key="e"><EnterIcon /></Kbd>, "steer"],
           [<Kbd key="esc">esc</Kbd>, paused ? "resume" : "pause"],
           [<Kbd key="1">1</Kbd>, "full log"],
           [<Kbd key="d">D</Kbd>, "draft"],

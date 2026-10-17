@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import type { ProjectDetail } from "../../shared/types";
-import { Button, CheckIcon, EASE, ErrorText, HintBar, Kbd, Page, chip, rise } from "../components/ui";
+import { Button, CheckIcon, CmdIcon, EnterIcon, EASE, ErrorText, HintBar, Kbd, Page, chip, rise } from "../components/ui";
 import type { Api } from "../lib/api";
 import { isMac, isTyping, useKeys } from "../lib/keys";
 import { navigate } from "../lib/router";
@@ -154,7 +154,7 @@ export function Ready({ api, detail, onImprove }: { api: Api; detail: ProjectDet
                   </>
                 ) : (
                   <>
-                    Copy prompt <Kbd dark>{isMac ? "⌘↵" : "Ctrl ↵"}</Kbd>
+                    Copy prompt <Kbd dark>{isMac ? <CmdIcon /> : "Ctrl"}<EnterIcon /></Kbd>
                   </>
                 )}
               </motion.span>
@@ -197,7 +197,7 @@ export function Ready({ api, detail, onImprove }: { api: Api; detail: ProjectDet
 
       <HintBar
         hints={[
-          [<Kbd key="c">{isMac ? "⌘↵" : "Ctrl ↵"}</Kbd>, "copy"],
+          [<Kbd key="c">{isMac ? <CmdIcon /> : "Ctrl"}<EnterIcon /></Kbd>, "copy"],
           [<Kbd key="i">I</Kbd>, "improve"],
           [<Kbd key="n">N</Kbd>, "new tool"],
         ]}

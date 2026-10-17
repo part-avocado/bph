@@ -16,6 +16,18 @@ export const EnterIcon = () => (
   </svg>
 );
 
+const keyIcon = (d: string, strokeWidth = 1.3) => (
+  <svg width="9" height="9" viewBox="0 0 12 12" fill="none" aria-hidden>
+    <path d={d} stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+export const ShiftIcon = () => keyIcon("M6 1.5 10.5 6.5H8v3.5H4V6.5H1.5z", 1.2);
+export const CmdIcon = () =>
+  keyIcon("M4.5 4.5h3v3h-3zM4.5 4.5V3A1.5 1.5 0 1 0 3 4.5h1.5M7.5 4.5V3A1.5 1.5 0 1 1 9 4.5H7.5M4.5 7.5V9A1.5 1.5 0 1 1 3 7.5h1.5M7.5 7.5V9A1.5 1.5 0 1 0 9 7.5H7.5", 1);
+export const ArrowUpIcon = () => keyIcon("M6 10V2.5M3 5.5 6 2.5l3 3");
+export const ArrowDownIcon = () => keyIcon("M6 2v7.5M3 6.5 6 9.5l3-3");
+
 export const CheckIcon = ({ size = 13, ring = false, className = "" }: { size?: number; ring?: boolean; className?: string }) =>
   ring ? (
     <svg width={size} height={size} viewBox="0 0 12 12" fill="none" className={className} aria-hidden>
