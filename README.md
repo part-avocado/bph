@@ -94,7 +94,13 @@ npx wrangler secret put CLERK_WEBHOOK_SIGNING_SECRET
 npm run db:migrate:remote
 ```
 
-Build with the production publishable key in `.env`, then deploy:
+Vite bakes the publishable key in at build time, and `vite build` reads `.env.production` over `.env`. Copy the example and fill in your Clerk **production** key (`pk_live_...`):
+
+```bash
+cp .env.production.example .env.production
+```
+
+Use the production instance's `CLERK_SECRET_KEY` (`sk_live_...`) and its own webhook signing secret for the `wrangler secret put` commands above, then deploy:
 
 ```bash
 npm run deploy

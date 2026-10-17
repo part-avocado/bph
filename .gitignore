@@ -4,3 +4,6 @@ dist
 .dev.vars
 .env
 *.local
+.env.*
+!.env.example
+!.env.production.example
