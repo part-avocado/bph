@@ -194,7 +194,7 @@ function McpHint() {
         Add MCP server
       </button>
       {open && (
-        <div role="dialog" aria-label="Add MCP server" className="absolute right-0 top-full z-20 mt-2 w-96 max-w-[calc(100vw-2rem)] rounded-2xl bg-paper p-4 text-xs text-ink-2 shadow-outline backdrop-blur-md">
+        <div role="dialog" aria-label="Add MCP server" className="absolute right-0 top-full z-20 mt-2 w-96 whitespace-normal max-w-[calc(100vw-2rem)] rounded-2xl bg-paper p-4 text-xs text-ink-2 shadow-outline backdrop-blur-md">
           <p className="font-medium text-ink">Let an agent build skills here</p>
           <div role="tablist" aria-label="Client" className="mt-3 flex flex-wrap gap-1">
             {MCP_CLIENTS.map((c) => (
@@ -211,7 +211,7 @@ function McpHint() {
             ))}
           </div>
           <p className="mt-3 text-mute">{client.hint}</p>
-          <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-ink/5 p-2.5 font-mono text-[11px] leading-relaxed text-ink">{command}</pre>
+          <pre className="mt-2 max-h-48 overflow-auto whitespace-pre rounded-lg bg-ink/5 p-2.5 font-mono text-[11px] leading-relaxed text-ink">{command}</pre>
           <div className="mt-3 flex items-center justify-between gap-2">
             <span className="truncate text-mute">{url}</span>
             <button type="button" onClick={copy} className={`${chip} shrink-0 px-3 py-1.5 font-medium text-ink hover:bg-paper`}>
