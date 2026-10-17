@@ -71,8 +71,8 @@ export function useApi() {
       plan: (id: string) => shared<IntakeState>(`/projects/${id}/plan`, { method: "POST" }),
       answer: (id: string, body: { questionId: string; prompt: string; answer: string | null; replan?: boolean }) =>
         call<IntakeState>(`/projects/${id}/answers`, { method: "POST", body: JSON.stringify(body) }),
-      startRun: (id: string, improve = false) =>
-        call<{ runId: string }>(`/projects/${id}/runs`, { method: "POST", body: JSON.stringify({ improve }) }),
+      startRun: (id: string, improve = false, feedback?: string) =>
+        call<{ runId: string }>(`/projects/${id}/runs`, { method: "POST", body: JSON.stringify({ improve, feedback }) }),
     }),
     [call, shared, getToken],
   );

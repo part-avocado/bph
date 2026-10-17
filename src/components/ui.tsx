@@ -37,8 +37,8 @@ export const SpaceIcon = () => (
 export const ArrowDownIcon = () => keyIcon("M6 2v7.5M3 6.5 6 9.5l3-3");
 
 /** Inline separator between short pieces of text: an asterisk drawn around its own centre, so it sits mid-line instead of up high like the "*" glyph. */
-export const Sep = () => (
-  <svg width="8" height="8" viewBox="0 0 8 8" fill="none" className="mx-1.5 inline-block align-middle" aria-hidden>
+export const Sep = ({ size = 8 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 8 8" fill="none" className="mx-1.5 inline-block align-middle" aria-hidden>
     <path d="M4 .8v6.4M1.2 2.4l5.6 3.2M1.2 5.6l5.6-3.2" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
   </svg>
 );

@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import type { ProjectDetail } from "../../shared/types";
-import { Button, CheckIcon, Sep, CmdIcon, EnterIcon, EASE, ErrorText, HintBar, Kbd, Page, chip, rise } from "../components/ui";
+import { Button, CheckIcon, CmdIcon, EnterIcon, EASE, ErrorText, HintBar, Kbd, Page, rise } from "../components/ui";
 import type { Api } from "../lib/api";
 import { isMac, isTyping, useKeys } from "../lib/keys";
 import { navigate } from "../lib/router";
@@ -25,13 +25,13 @@ function useReveal(text: string, key: string) {
 }
 
 export function Ready({ api, detail, onImprove }: { api: Api; detail: ProjectDetail; onImprove: (runId: string) => void }) {
-  const { project, latest, questions, rounds } = detail;
+  const { project, latest } = detail;
   const body = latest?.body ?? "";
   const { visible, done } = useReveal(body, latest?.id ?? "none");
   const [copied, setCopied] = useState(false);
   const [improving, setImproving] = useState(false);
+  const [feedback, setFeedback] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const answers = questions.filter((q) => q.answer && !q.skipped).length;
 
   async function copy() {
     try {
@@ -49,7 +49,7 @@ export function Ready({ api, detail, onImprove }: { api: Api; detail: ProjectDet
     setImproving(true);
     setError(null);
     try {
-      const { runId } = await api.startRun(project.id, true);
+      const { runId } = await api.startRun(project.id, true, feedback.trim() || undefined);
       onImprove(runId);
     } catch (e) {
       setError((e as Error).message);
@@ -80,19 +80,8 @@ export function Ready({ api, detail, onImprove }: { api: Api; detail: ProjectDet
     }
   });
 
-  const score = latest?.score;
-
   return (
-    <Page
-      tint="mint"
-      title={project.title}
-      headerRight={
-        <span className={`${chip} mr-1 flex items-center gap-1.5 px-2.5 py-1 font-medium text-ink sm:mr-2`}>
-          <span className="size-1.5 rounded-full bg-ok" aria-hidden />
-          Ready{score != null ? <span className="font-mono tabular-nums"><Sep />{score}</span> : null}
-        </span>
-      }
-    >
+    <Page tint="mint" title={project.title}>
       <main className="relative z-10 mx-auto grid max-w-wide gap-6 px-4 pt-6 pb-28 sm:px-6 lg:grid-cols-[minmax(0,1fr)_240px]">
         <div className="min-w-0">
           <motion.h1
@@ -103,9 +92,6 @@ export function Ready({ api, detail, onImprove }: { api: Api; detail: ProjectDet
           >
             Your prompt is ready.
           </motion.h1>
-          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="mt-1.5 text-sm text-mute">
-            {rounds} round{rounds === 1 ? "" : "s"}<Sep />{answers} answer{answers === 1 ? "" : "s"}<Sep />0 questions left for Claude
-          </motion.p>
 
           <motion.figure {...rise(0.15, 18)} className="card mt-6 overflow-hidden">
             <figcaption className="flex items-center justify-between gap-3 border-b border-line-2 px-4 py-2.5 font-mono text-2xs text-mute">
@@ -170,10 +156,28 @@ export function Ready({ api, detail, onImprove }: { api: Api; detail: ProjectDet
               Not perfect yet?
             </h2>
             <p className="mt-2 text-xs leading-relaxed text-mute">
-              Add another round of improvements. The orchestrator re-reads the brief, closes more gaps and aims for 95+.
+              Tell us what to change and the reviewers will apply it, or leave it blank to let them close more gaps.
             </p>
+            <label htmlFor="feedback" className="sr-only">
+              What should change?
+            </label>
+            <textarea
+              id="feedback"
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  void improve();
+                } else if (e.key === "Escape") (e.target as HTMLElement).blur();
+              }}
+              placeholder="e.g. Use pnpm, and add a README step"
+              rows={3}
+              maxLength={1000}
+              className="card mt-3 block w-full resize-none bg-paper px-3 py-2.5 text-sm outline-none placeholder:text-faint"
+            />
             <Button variant="accent" size="md" onClick={improve} disabled={improving} loading={improving} kbd="I" className="mt-3 w-full text-sm">
-              Improve again
+              {feedback.trim() ? "Apply feedback" : "Improve again"}
             </Button>
             <AnimatePresence>{error && <ErrorText className="mt-2 justify-start text-xs">{error}</ErrorText>}</AnimatePresence>
           </section>

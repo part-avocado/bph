@@ -24,6 +24,8 @@ export interface RunConfig {
   tokenBudget: number;
   /** Present when improving an existing prompt instead of drafting fresh. */
   base: { id: string; version: number; body: string; score: number | null } | null;
+  /** What the user wants changed, when improving a finished prompt. */
+  feedback?: string;
 }
 
 interface Draft {
@@ -115,7 +117,7 @@ export class RunObject extends DurableObject<Env> {
       tokensIn: 0,
       tokensOut: 0,
       tokenBudget: config.tokenBudget,
-      steering: [],
+      steering: config.feedback ? [config.feedback] : [],
       error: null,
       startedAt: now(),
       finishedAt: null,
@@ -123,6 +125,7 @@ export class RunObject extends DurableObject<Env> {
     this.logLines = [];
     await this.ctx.storage.put({ config, state: this.state, draft: this.draft, log: this.logLines });
     await this.log("orchestrator", config.base ? `improving draft v${config.base.version}` : "up, reading the brief");
+    if (config.feedback) await this.log("you", `feedback: ${config.feedback}`);
     await this.ctx.storage.setAlarm(Date.now());
     return this.state;
   }

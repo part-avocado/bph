@@ -283,8 +283,8 @@ app.post("/projects/:id/runs", async (c) => {
   const userId = c.get("userId");
   const row = await getProjectRow(c.env.DB, c.req.param("id"), userId);
   if (!row) return c.json({ error: "Not found" }, 404);
-  const { improve } = await c.req.json<{ improve?: boolean }>().catch(() => ({ improve: false }));
-  const res = await startRun(c.env, row, userId, improve);
+  const { improve, feedback } = await c.req.json<{ improve?: boolean; feedback?: unknown }>().catch(() => ({ improve: false, feedback: undefined }));
+  const res = await startRun(c.env, row, userId, improve, typeof feedback === "string" ? feedback : undefined);
   return "error" in res ? c.json({ error: res.error }, res.status) : c.json(res);
 });
 

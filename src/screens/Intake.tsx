@@ -6,14 +6,25 @@ import type { Api } from "../lib/api";
 import { isTyping, useKeys } from "../lib/keys";
 
 interface Local {
-  choice: number | null;
+  choices: number[];
   custom: string;
 }
 
+const SEP = "; ";
+
 function initialLocal(q: Question): Local {
-  if (q.answer === null) return { choice: null, custom: "" };
-  const i = q.options.indexOf(q.answer);
-  return i >= 0 ? { choice: i, custom: "" } : { choice: null, custom: q.answer };
+  if (q.answer === null) return { choices: [], custom: "" };
+  const whole = q.options.indexOf(q.answer);
+  if (whole >= 0) return { choices: [whole], custom: "" };
+  // Multiple picks are saved joined; whatever isn't an option was typed.
+  const choices: number[] = [];
+  const typed: string[] = [];
+  for (const part of q.answer.split(SEP)) {
+    const i = q.options.indexOf(part);
+    if (i >= 0 && !choices.includes(i)) choices.push(i);
+    else typed.push(part);
+  }
+  return { choices, custom: typed.join(SEP) };
 }
 
 export function Intake({ api, project, onBuild }: { api: Api; project: Project; onBuild: (runId: string) => void }) {
@@ -82,13 +93,13 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
     if (questions && !currentId && firstOpen && inFlight === 0) setCurrentId(firstOpen);
   }, [questions, view, currentId, firstOpen, inFlight]);
 
-  const local = current ? (locals[current.id] ?? initialLocal(current)) : { choice: null, custom: "" };
+  const local = current ? (locals[current.id] ?? initialLocal(current)) : { choices: [], custom: "" };
   const setLocal = (patch: Partial<Local>) => current && setLocals((m) => ({ ...m, [current.id]: { ...local, ...patch } }));
 
   useEffect(() => {
     if (!current) return;
     const l = locals[current.id] ?? initialLocal(current);
-    setFocus(l.custom ? current.options.length : (l.choice ?? 0));
+    setFocus(l.choices[0] ?? (l.custom ? current.options.length : 0));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id]);
 
@@ -122,11 +133,17 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
     });
   }
 
-  function continueWith(choiceOverride?: number) {
+  function toggle(i: number) {
+    setLocal({ choices: local.choices.includes(i) ? local.choices.filter((c) => c !== i) : [...local.choices, i] });
+  }
+
+  function continueWith() {
     if (!current) return;
+    const picked = [...local.choices].sort((a, b) => a - b).map((i) => current.options[i]);
     const custom = local.custom.trim();
-    const choice = choiceOverride ?? local.choice ?? (focus < current.options.length ? focus : null);
-    const answer = custom || (choice !== null ? current.options[choice] : null);
+    // Nothing ticked: Enter takes the highlighted option.
+    if (!picked.length && !custom && focus < current.options.length) picked.push(current.options[focus]);
+    const answer = [...picked, ...(custom ? [custom] : [])].join(SEP);
     if (!answer) return customRef.current?.focus();
     submit(answer);
   }
@@ -238,7 +255,7 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
       }
     } else if (e.key === " ") {
       e.preventDefault();
-      if (focus < n) setLocal({ choice: local.choice === focus ? null : focus, custom: "" });
+      if (focus < n) toggle(focus);
     } else if (e.key === "ArrowLeft" || e.key === "Backspace") {
       e.preventDefault();
       back();
@@ -246,12 +263,12 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
       e.preventDefault();
       const i = Number(e.key) - 1;
       setFocus(i);
-      setLocal({ choice: i, custom: "" });
+      toggle(i);
     } else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
       // Start typing anywhere to write your own answer.
       e.preventDefault();
       setFocus(n);
-      setLocal({ custom: local.custom + e.key, choice: null });
+      setLocal({ custom: local.custom + e.key });
       customRef.current?.focus();
     }
   });
@@ -416,31 +433,30 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
                 {current.prompt}
               </h2>
               {current.why && <p className="mt-2 text-center text-sm text-pretty text-mute">{current.why}</p>}
+              <p className="mt-1 text-center font-mono text-2xs tracking-wide text-faint uppercase">Select all that apply</p>
 
-              <div role="radiogroup" aria-labelledby="q" className="mt-7 space-y-2">
+              <div role="group" aria-labelledby="q" className="mt-7 space-y-2">
                 {current.options.map((opt, i) => {
-                  const selected = local.choice === i && !local.custom;
+                  const selected = local.choices.includes(i);
                   const focused = focus === i;
                   return (
                     <motion.button
                       key={opt}
-                      role="radio"
-                      aria-checked={selected}
+                      aria-pressed={selected}
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0, transition: { delay: 0.06 + i * 0.05 } }}
                       whileTap={{ scale: 0.99 }}
                       onMouseEnter={() => setFocus(i)}
                       onClick={() => {
                         setFocus(i);
-                        setLocal({ choice: i, custom: "" });
+                        toggle(i);
                       }}
-                      onDoubleClick={() => continueWith(i)}
                       className={`flex w-full items-center gap-3 rounded-xl bg-paper/85 px-3.5 py-3 text-left text-base backdrop-blur transition-[box-shadow,background-color] duration-150 ${
                         focused ? "bg-paper shadow-outline-strong" : "shadow-outline hover:bg-paper"
                       }`}
                     >
                       <span
-                        className={`flex size-4.5 shrink-0 items-center justify-center rounded-full text-on-ink transition-colors ${
+                        className={`flex size-4.5 shrink-0 items-center justify-center rounded-md text-on-ink transition-colors ${
                           selected ? "bg-ink" : "ring-1 ring-ink/20"
                         }`}
                         aria-hidden
@@ -468,7 +484,7 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
               <input
                 ref={customRef}
                 value={local.custom}
-                onChange={(e) => setLocal({ custom: e.target.value, choice: e.target.value ? null : local.choice })}
+                onChange={(e) => setLocal({ custom: e.target.value })}
                 onFocus={() => setFocus(current.options.length)}
                 placeholder="Or type your own…"
                 aria-label="Your own answer"

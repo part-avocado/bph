@@ -102,7 +102,7 @@ export async function answerQuestion(
 }
 
 /** Starts a build run, or returns the one already going. Enforces the daily limit. */
-export async function startRun(env: Env, row: ProjectRow, userId: string, improve: boolean | undefined): Promise<{ runId: string } | Failure> {
+export async function startRun(env: Env, row: ProjectRow, userId: string, improve: boolean | undefined, feedback?: string): Promise<{ runId: string } | Failure> {
   // Everything the decision needs, fetched at once: the brief's questions and the base version
   // in one D1 batch, alongside the active run's state from its Durable Object.
   const db = env.DB;
@@ -124,6 +124,7 @@ export async function startRun(env: Env, row: ProjectRow, userId: string, improv
     // Improving an already-strong prompt should still aim higher than where it is.
     targetScore: base?.score != null ? Math.min(99, Math.max(95, base.score + 2)) : 95,
     tokenBudget: Number(env.RUN_TOKEN_BUDGET),
+    feedback: improve ? feedback?.trim().slice(0, 1000) || undefined : undefined,
     base: base ? { id: base.id, version: base.version, body: base.body, score: base.score } : null,
   };
   // Take a slot under the daily limit in the same statement that counts, so parallel starts

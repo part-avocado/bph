@@ -299,8 +299,7 @@ export function Construction({ api, project, runId, onDone }: { api: Api; projec
     } else if (e.key.toLowerCase() === "d" && draft) {
       e.preventDefault();
       setPanel("draft");
-    } else if (!done && (e.key === "+" || e.key === "=")) send({ type: "rounds", delta: 1 });
-    else if (!done && e.key === "-") send({ type: "rounds", delta: -1 });
+    }
   });
 
   const critics = agents.filter((a) => a.role === "critic");
@@ -338,7 +337,7 @@ export function Construction({ api, project, runId, onDone }: { api: Api; projec
       headerRight={
         state && (
           <span className="mr-2 hidden font-mono text-xs text-mute tabular-nums sm:inline">
-            {state.round === 0 ? "Drafting" : `Round ${state.round} / ${state.maxRounds}`}
+            {state.round === 0 ? "Drafting" : "Reviewing"}
           </span>
         )
       }
@@ -429,7 +428,7 @@ export function Construction({ api, project, runId, onDone }: { api: Api; projec
                     <div>
                       <div className="text-sm font-medium">Orchestrator</div>
                       <div className="text-2xs text-on-ink/60">
-                        {state ? (state.round === 0 ? "Drafting" : `Round ${state.round} of ${state.maxRounds}`) : "Starting"}
+                        {state ? (state.round === 0 ? "Drafting" : "Reviewing") : "Starting"}
                       </div>
                     </div>
                   </div>
@@ -447,24 +446,6 @@ export function Construction({ api, project, runId, onDone }: { api: Api; projec
                       </div>
                     </div>
                   )}
-                  <div className="mt-3 grid grid-cols-2 gap-1.5">
-                    <button
-                      onClick={() => send({ type: "rounds", delta: -1 })}
-                      disabled={!state || done || state.maxRounds <= Math.max(1, state.round)}
-                      aria-label="Remove a round"
-                      className="h-7 rounded-md bg-on-ink/10 text-xs text-on-ink/85 transition hover:bg-on-ink/15 disabled:cursor-not-allowed disabled:opacity-35"
-                    >
-                      − Round
-                    </button>
-                    <button
-                      onClick={() => send({ type: "rounds", delta: 1 })}
-                      disabled={!state || done || state.maxRounds >= 8}
-                      aria-label="Add a round"
-                      className="h-7 rounded-md bg-on-ink/10 text-xs text-on-ink/85 transition hover:bg-on-ink/15 disabled:cursor-not-allowed disabled:opacity-35"
-                    >
-                      + Round
-                    </button>
-                  </div>
                 </div>
               </div>
             </div>
@@ -536,7 +517,6 @@ export function Construction({ api, project, runId, onDone }: { api: Api; projec
             <span className="tabular-nums">
               <span className="tracking-wider">TOKENS</span>&nbsp;&nbsp; {fmtTok(state?.tokensIn ?? 0)} in / {fmtTok(state?.tokensOut ?? 0)} out
             </span>
-            <span className="font-sans text-xs text-faint">Rounds and agents can be added or removed until the target is met.</span>
           </div>
         </motion.section>
 
