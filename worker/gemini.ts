@@ -47,12 +47,18 @@ export class GeminiError extends Error {
   }
 }
 
-function buildBody(req: GenerateRequest) {
+/** Gemma on the Gemini API only documents "minimal" (thinking off) and "high" (on). */
+function thinkingFor(model: string, level: ThinkingLevel): ThinkingLevel {
+  if (!model.startsWith("gemma")) return level;
+  return level === "minimal" ? "minimal" : "high";
+}
+
+function buildBody(model: string, req: GenerateRequest) {
   const body: Record<string, unknown> = {
     systemInstruction: { parts: [{ text: req.system }] },
     contents: req.contents,
     generationConfig: {
-      thinkingConfig: { thinkingLevel: req.thinking ?? "low" },
+      thinkingConfig: { thinkingLevel: thinkingFor(model, req.thinking ?? "low") },
       ...(req.maxOutputTokens ? { maxOutputTokens: req.maxOutputTokens } : {}),
       ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
       ...(req.schema ? { responseMimeType: "application/json", responseJsonSchema: req.schema } : {}),
@@ -119,7 +125,7 @@ function collect(r: RawResponse, into: GenerateResult) {
 }
 
 export async function generate(env: Env, req: GenerateRequest): Promise<GenerateResult> {
-  const res = await post(env, "generateContent", buildBody(req));
+  const res = await post(env, "generateContent", buildBody(env.GEMINI_MODEL, req));
   const out: GenerateResult = { text: "", calls: [], usage: { tokensIn: 0, tokensOut: 0 } };
   const raw = (await res.json().catch(() => null)) as RawResponse | null;
   if (!raw) throw new GeminiError("Gemini returned a response that wasn't JSON.", 502);
@@ -136,7 +142,7 @@ export async function generateStream(
   req: GenerateRequest,
   onChunk: (textSoFar: string) => void,
 ): Promise<GenerateResult> {
-  const res = await post(env, "streamGenerateContent", buildBody(req), "?alt=sse");
+  const res = await post(env, "streamGenerateContent", buildBody(env.GEMINI_MODEL, req), "?alt=sse");
   const out: GenerateResult = { text: "", calls: [], usage: { tokensIn: 0, tokensOut: 0 } };
   const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = "";

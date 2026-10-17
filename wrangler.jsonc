@@ -10,7 +10,7 @@
     "run_worker_first": ["/api/*", "/mcp", "/.well-known/*"]
   },
   "vars": {
-    "GEMINI_MODEL": "gemini-3.6-flash",
+    "GEMINI_MODEL": "gemma-4-31b-it",
     // Set to your AI Gateway endpoint to route Gemini through it, e.g.
     // https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway>/google-ai-studio
     "GEMINI_BASE_URL": "https://generativelanguage.googleapis.com",
