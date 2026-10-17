@@ -26,6 +26,13 @@ export const ShiftIcon = () => keyIcon("M6 1.5 10.5 6.5H8v3.5H4V6.5H1.5z", 1.2);
 export const CmdIcon = () =>
   keyIcon("M4.5 4.5h3v3h-3zM4.5 4.5V3A1.5 1.5 0 1 0 3 4.5h1.5M7.5 4.5V3A1.5 1.5 0 1 1 9 4.5H7.5M4.5 7.5V9A1.5 1.5 0 1 1 3 7.5h1.5M7.5 7.5V9A1.5 1.5 0 1 0 9 7.5H7.5", 1);
 export const ArrowUpIcon = () => keyIcon("M6 10V2.5M3 5.5 6 2.5l3 3");
+export const ArrowLeftIcon = () => keyIcon("M10 6H2.5M5.5 3 2.5 6l3 3");
+/** The space bar: an open-top bracket. */
+export const SpaceIcon = () => (
+  <svg width="14" height="9" viewBox="0 0 14 9" fill="none" aria-hidden>
+    <path d="M1.5 2.5v3a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
 export const ArrowDownIcon = () => keyIcon("M6 2v7.5M3 6.5 6 9.5l3-3");
 
 /** Inline separator between short pieces of text: an asterisk drawn around its own centre, so it sits mid-line instead of up high like the "*" glyph. */

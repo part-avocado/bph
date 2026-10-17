@@ -19,7 +19,7 @@ import {
   type VersionRow,
 } from "./db";
 import { GeminiError } from "./gemini";
-import { isInlineMime, planQuestions } from "./intake";
+import { isInlineMime, planQuestions, summarizeIdea } from "./intake";
 import type { RunConfig } from "./run";
 
 export { RunObject } from "./run";
@@ -161,6 +161,8 @@ app.post("/projects", async (c) => {
     context: files.length ? null : "",
     status: "intake",
     intake_complete: 0,
+    summary: null,
+    summary_confirmed: 0,
     active_run_id: null,
     created_at: t,
     updated_at: t,
@@ -202,6 +204,8 @@ const toIntakeState = (row: ProjectRow, questions: Question[]): IntakeState => (
   project: toProject(row),
   questions,
   complete: !!row.intake_complete,
+  summary: row.summary,
+  summaryConfirmed: !!row.summary_confirmed,
 });
 
 /** Reads the project and its questions in one round trip. */
@@ -214,11 +218,39 @@ async function loadIntake(db: D1Database, projectId: string, userId: string) {
 app.post("/projects/:id/plan", async (c) => {
   const { row, questions } = await loadIntake(c.env.DB, c.req.param("id"), c.get("userId"));
   if (!row) return c.json({ error: "Not found" }, 404);
+  // Nothing is asked until the user has agreed with the model's paraphrase of the idea.
+  if (!row.summary_confirmed) {
+    if (!row.summary) await summarizeIdea(c.env, row);
+    return c.json(toIntakeState(row, questions));
+  }
   if (!questions.length && !row.intake_complete) {
     const planned = await planQuestions(c.env, row, { existing: questions });
     return c.json(toIntakeState(planned.row, planned.questions));
   }
   return c.json(toIntakeState(row, questions));
+});
+
+/** The user says the paraphrase is off; rewrite it with their correction. */
+app.post("/projects/:id/summary", async (c) => {
+  const { row, questions } = await loadIntake(c.env.DB, c.req.param("id"), c.get("userId"));
+  if (!row) return c.json({ error: "Not found" }, 404);
+  if (row.status !== "intake") return c.json(toIntakeState(row, questions));
+  const body = await c.req.json<{ guidance?: unknown }>().catch(() => null);
+  const guidance = typeof body?.guidance === "string" ? body.guidance.trim().slice(0, 1000) : "";
+  if (!guidance) return c.json({ error: "Tell us what to change." }, 400);
+  await summarizeIdea(c.env, row, guidance);
+  return c.json(toIntakeState(row, questions));
+});
+
+/** The user agrees with the paraphrase; now plan the questions. */
+app.post("/projects/:id/summary/confirm", async (c) => {
+  const { row, questions } = await loadIntake(c.env.DB, c.req.param("id"), c.get("userId"));
+  if (!row) return c.json({ error: "Not found" }, 404);
+  if (row.status !== "intake") return c.json(toIntakeState(row, questions));
+  await c.env.DB.prepare("UPDATE projects SET summary_confirmed = 1, updated_at = ? WHERE id = ?").bind(now(), row.id).run();
+  row.summary_confirmed = 1;
+  const planned = await planQuestions(c.env, row, { existing: questions });
+  return c.json(toIntakeState(planned.row, planned.questions));
 });
 
 app.post("/projects/:id/answers", async (c) => {
@@ -253,7 +285,7 @@ app.post("/projects/:id/answers", async (c) => {
   if (body.replan !== false) {
     // The answer is saved either way; a failed re-plan just keeps the questions already planned.
     try {
-      const planned = await planQuestions(c.env, row, { keepNext: true });
+      const planned = await planQuestions(c.env, row);
       return c.json(toIntakeState(planned.row, planned.questions));
     } catch (err) {
       console.error("replan failed", err);

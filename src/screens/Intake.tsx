@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Project, Question } from "../../shared/types";
-import { ArrowDownIcon, ArrowUpIcon, Button, CheckIcon, EASE, EnterIcon, ErrorText, HintBar, Kbd, Page, Skeleton, Spinner } from "../components/ui";
+import type { IntakeState, Project, Question } from "../../shared/types";
+import { ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, Button, CheckIcon, EASE, EnterIcon, ErrorText, HintBar, Kbd, Page, Skeleton, SpaceIcon, Spinner } from "../components/ui";
 import type { Api } from "../lib/api";
 import { isTyping, useKeys } from "../lib/keys";
 
@@ -18,6 +18,13 @@ function initialLocal(q: Question): Local {
 
 export function Intake({ api, project, onBuild }: { api: Api; project: Project; onBuild: (runId: string) => void }) {
   const [title, setTitle] = useState(project.title);
+  /** The model's paraphrase of the idea, and whether the user has agreed with it. */
+  const [summary, setSummary] = useState<string | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
+  const [guidance, setGuidance] = useState("");
+  const [rewriting, setRewriting] = useState(false);
+  const guidanceRef = useRef<HTMLTextAreaElement>(null);
   const [questions, setQuestions] = useState<Question[] | null>(null);
   /** Answers given here that the server may not have confirmed yet. */
   const [pending, setPending] = useState<Record<string, string | null>>({});
@@ -46,9 +53,11 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
   const answeredCount = view.filter(isSettled).length;
   const realAnswers = view.filter((q) => q.answer !== null && !q.skipped).length;
 
-  const absorb = useCallback((qs: Question[], t: string) => {
-    setQuestions(qs);
-    setTitle(t);
+  const absorb = useCallback((s: IntakeState) => {
+    setQuestions(s.questions);
+    setTitle(s.project.title);
+    setSummary(s.summary);
+    setConfirmed(s.summaryConfirmed);
   }, []);
 
   useEffect(() => {
@@ -57,7 +66,7 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
       .plan(project.id)
       .then((s) => {
         if (!live) return;
-        absorb(s.questions, s.project.title);
+        absorb(s);
         setCurrentId(s.questions.find((q) => q.answer === null && !q.skipped)?.id ?? null);
       })
       .catch((e) => live && setError((e as Error).message));
@@ -87,13 +96,13 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
     const q = current;
     setDir(1);
     setPending((p) => ({ ...p, [q.id]: answer }));
-    const next = view.slice(index + 1).find((x) => !isSettled(x) && x.id !== q.id);
-    setCurrentId(next?.id ?? null);
+    // The next question is planned from this answer, so wait for it instead of showing a stale one.
+    setCurrentId(null);
     setInFlight((n) => n + 1);
     queue.current = queue.current.then(async () => {
       try {
         const s = await api.answer(project.id, { questionId: q.id, prompt: q.prompt, answer });
-        absorb(s.questions, s.project.title);
+        absorb(s);
         setPending((p) => {
           const { [q.id]: _, ...rest } = p;
           return rest;
@@ -127,6 +136,38 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
     setCurrentId(view[prevIndex].id);
   }
 
+  async function confirmSummary() {
+    if (rewriting) return;
+    setRewriting(true);
+    setError(null);
+    try {
+      const s = await api.confirmSummary(project.id);
+      absorb(s);
+      setCurrentId(s.questions.find((q) => q.answer === null && !q.skipped)?.id ?? null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setRewriting(false);
+    }
+  }
+
+  async function sendGuidance() {
+    const text = guidance.trim();
+    if (!text) return guidanceRef.current?.focus();
+    if (rewriting) return;
+    setRewriting(true);
+    setError(null);
+    try {
+      absorb(await api.summarize(project.id, text));
+      setGuidance("");
+      setCorrecting(false);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setRewriting(false);
+    }
+  }
+
   async function build() {
     if (building) return;
     setBuilding(true);
@@ -141,11 +182,30 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
   }
 
   const loading = questions === null;
-  const thinking = !loading && !current && inFlight > 0;
-  const done = !loading && !current && inFlight === 0;
+  const reviewing = !loading && !confirmed;
+  const thinking = !loading && confirmed && !current && inFlight > 0;
+  const done = !loading && confirmed && !current && inFlight === 0;
 
   useKeys((e) => {
     if (loading) return;
+    if (reviewing) {
+      if (isTyping(e)) {
+        if (e.key === "Escape") {
+          setCorrecting(false);
+          (e.target as HTMLElement).blur();
+        }
+        return;
+      }
+      if (e.key === "Enter" && !correcting) {
+        e.preventDefault();
+        void confirmSummary();
+      } else if (e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        setCorrecting(true);
+        setTimeout(() => guidanceRef.current?.focus(), 0);
+      }
+      return;
+    }
     if (done) {
       if (e.key === "Enter") {
         e.preventDefault();
@@ -202,7 +262,7 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
       tint="lilac"
       title={title}
       headerRight={
-        !loading && (
+        !loading && confirmed && (
           <div className="mr-2 hidden items-center gap-3 sm:flex" role="progressbar" aria-label="Questions answered" aria-valuemin={0} aria-valuemax={total} aria-valuenow={position}>
             <div className="flex gap-1" aria-hidden>
               {view.map((q, i) => (
@@ -223,11 +283,18 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
       }
     >
       <main className="relative z-10 mx-auto flex min-h-[calc(100dvh-4rem)] max-w-narrow flex-col justify-center px-4 pb-28">
-        {!loading && (
+        {!loading && confirmed && (
           <p className="mb-6 text-center font-mono text-xs text-mute tabular-nums sm:hidden" aria-hidden>
             {position} / {total}
           </p>
         )}
+        {confirmed && summary && (
+          <figure className="mx-auto mb-8 max-w-prose rounded-xl bg-paper/70 px-4 py-3 text-center shadow-outline backdrop-blur">
+            <figcaption className="font-mono text-2xs tracking-wide text-faint uppercase">What we're building</figcaption>
+            <blockquote className="mt-1 line-clamp-3 text-sm text-pretty text-ink-2">{summary}</blockquote>
+          </figure>
+        )}
+
         <AnimatePresence mode="wait" custom={dir}>
           {loading ? (
             <motion.div key="loading" exit={{ opacity: 0 }} className="space-y-3" aria-busy="true">
@@ -240,6 +307,93 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
                 <Skeleton key={i} className="h-11.5 w-full rounded-xl" delay={i * 120} />
               ))}
             </motion.div>
+          ) : reviewing ? (
+            <motion.section
+              key="review"
+              initial={{ opacity: 0, y: 18, filter: "blur(6px)" }}
+              animate={{ opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.45, ease: EASE } }}
+              exit={{ opacity: 0, y: -14, filter: "blur(4px)", transition: { duration: 0.18 } }}
+              aria-labelledby="review-title"
+              aria-busy={rewriting}
+            >
+              <h2 id="review-title" className="text-center text-title font-semibold tracking-title text-balance sm:text-title-lg">
+                Did we get that right?
+              </h2>
+              <p className="mt-2 text-center text-sm text-pretty text-mute">Here's what we understood. Confirm it, or tell us what to change.</p>
+
+              <blockquote className="card mt-7 p-4 text-md leading-relaxed text-pretty sm:p-5" aria-live="polite">
+                {rewriting && !correcting ? (
+                  <span className="flex items-center gap-2 text-mute">
+                    <Spinner /> Working on it…
+                  </span>
+                ) : (
+                  summary
+                )}
+              </blockquote>
+              <p className="mt-3 line-clamp-2 px-1 text-center text-xs text-pretty text-faint">You wrote: {project.idea}</p>
+
+              <AnimatePresence initial={false} mode="wait">
+                {correcting ? (
+                  <motion.form
+                    key="correct"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void sendGuidance();
+                    }}
+                    className="mt-5"
+                  >
+                    <label htmlFor="guidance" className="sr-only">
+                      What should change?
+                    </label>
+                    <textarea
+                      id="guidance"
+                      ref={guidanceRef}
+                      value={guidance}
+                      onChange={(e) => setGuidance(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                          e.preventDefault();
+                          void sendGuidance();
+                        }
+                      }}
+                      placeholder="What did we get wrong or miss?"
+                      rows={3}
+                      maxLength={1000}
+                      autoFocus
+                      className="card block w-full resize-none bg-paper px-3.5 py-3 text-base outline-none placeholder:text-faint"
+                    />
+                    <div className="mt-4 flex items-center justify-center gap-3">
+                      <Button type="submit" disabled={!guidance.trim()} loading={rewriting} kbd={<EnterIcon />}>
+                        {rewriting ? "Rewriting" : "Rewrite"}
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setCorrecting(false)} disabled={rewriting} kbd="esc">
+                        Cancel
+                      </Button>
+                    </div>
+                  </motion.form>
+                ) : (
+                  <motion.div key="choose" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mt-7 flex items-center justify-center gap-3">
+                    <Button onClick={() => void confirmSummary()} disabled={rewriting} loading={rewriting} kbd={<EnterIcon />}>
+                      {rewriting ? "Getting questions" : "That's right"}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setCorrecting(true);
+                        setTimeout(() => guidanceRef.current?.focus(), 0);
+                      }}
+                      disabled={rewriting}
+                      kbd="N"
+                    >
+                      Not quite
+                    </Button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.section>
           ) : current ? (
             <motion.section
               key={current.id}
@@ -291,7 +445,7 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
                         </AnimatePresence>
                       </span>
                       <span className="min-w-0 flex-1 text-pretty">{opt}</span>
-                      {focused && !selected && <Kbd>space</Kbd>}
+                      {focused && !selected && <Kbd><SpaceIcon /></Kbd>}
                       {!focused && (
                         <span className="hidden font-mono text-2xs text-faint sm:inline" aria-hidden>
                           {i + 1}
@@ -326,7 +480,7 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
           ) : thinking ? (
             <motion.div key="thinking" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center">
               <p className="flex items-center justify-center gap-2 text-base text-mute" role="status">
-                <Spinner /> Checking whether anything else matters…
+                <Spinner /> Thinking about what to ask next…
               </p>
             </motion.div>
           ) : (
@@ -379,10 +533,20 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
 
       <HintBar
         hints={
-          done
+          reviewing
+            ? correcting
+              ? [
+                  [<Kbd key="e"><EnterIcon /></Kbd>, "rewrite"],
+                  [<Kbd key="x">esc</Kbd>, "cancel"],
+                ]
+              : [
+                  [<Kbd key="e"><EnterIcon /></Kbd>, "that's right"],
+                  [<Kbd key="n">N</Kbd>, "not quite"],
+                ]
+            : done
             ? [
                 [<Kbd key="e"><EnterIcon /></Kbd>, "build"],
-                [<Kbd key="l">←</Kbd>, "back"],
+                [<Kbd key="l"><ArrowLeftIcon /></Kbd>, "back"],
               ]
             : [
                 [
@@ -392,9 +556,9 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
                   </span>,
                   "move",
                 ],
-                [<Kbd key="s">space</Kbd>, "select"],
+                [<Kbd key="s"><SpaceIcon /></Kbd>, "select"],
                 [<Kbd key="e"><EnterIcon /></Kbd>, "continue"],
-                [<Kbd key="l">←</Kbd>, "back"],
+                [<Kbd key="l"><ArrowLeftIcon /></Kbd>, "back"],
               ]
         }
       />

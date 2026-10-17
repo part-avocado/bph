@@ -64,6 +64,9 @@ export function useApi() {
       },
       getProject: (id: string) => shared<ProjectDetail>(`/projects/${id}`),
       deleteProject: (id: string) => call<{ ok: true }>(`/projects/${id}`, { method: "DELETE" }),
+      summarize: (id: string, guidance: string) =>
+        call<IntakeState>(`/projects/${id}/summary`, { method: "POST", body: JSON.stringify({ guidance }) }),
+      confirmSummary: (id: string) => call<IntakeState>(`/projects/${id}/summary/confirm`, { method: "POST" }),
       // Planning is idempotent but costs a model call; never run two at once for one project.
       plan: (id: string) => shared<IntakeState>(`/projects/${id}/plan`, { method: "POST" }),
       answer: (id: string, body: { questionId: string; prompt: string; answer: string | null; replan?: boolean }) =>

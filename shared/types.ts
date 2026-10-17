@@ -27,6 +27,10 @@ export interface IntakeState {
   questions: Question[];
   /** True once the planner believes nothing else is worth asking. */
   complete: boolean;
+  /** The model's paraphrase of the idea; null until it has been written. */
+  summary: string | null;
+  /** Questions only start once the user has confirmed the paraphrase. */
+  summaryConfirmed: boolean;
 }
 
 export interface PromptVersion {

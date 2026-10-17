@@ -11,6 +11,8 @@ interface ProjectRow {
   context: string | null;
   status: Project["status"];
   intake_complete: number;
+  summary: string | null;
+  summary_confirmed: number;
   active_run_id: string | null;
   created_at: number;
   updated_at: number;
@@ -89,6 +91,7 @@ export async function getLatestVersion(db: D1Database, projectId: string): Promi
 export function buildBrief(project: ProjectRow, questions: Question[]): string {
   const answered = questions.filter((q) => q.answer && !q.skipped);
   const lines = [`Idea: ${project.idea}`];
+  if (project.summary_confirmed && project.summary) lines.push(`What the user confirmed they mean: ${project.summary}`);
   if (project.context) lines.push("", "From the user's attachments:", project.context);
   if (answered.length) {
     lines.push("", "The user's answers:");

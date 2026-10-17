@@ -1,5 +1,5 @@
 import type { Question } from "../shared/types";
-import { DIGEST_SCHEMA, DIGEST_SYSTEM, PLANNER_SCHEMA, PLANNER_SYSTEM } from "./agents/prompts";
+import { DIGEST_SCHEMA, DIGEST_SYSTEM, PLANNER_SCHEMA, PLANNER_SYSTEM, SUMMARY_SCHEMA, SUMMARY_SYSTEM } from "./agents/prompts";
 import { getQuestions, newId, now, projectStmt, questionsStmt, toQuestions, type ProjectRow, type QuestionRow } from "./db";
 import { generate, parseJson, type Part } from "./gemini";
 
@@ -61,6 +61,44 @@ export async function ensureDigest(env: Env, project: ProjectRow): Promise<strin
   return context;
 }
 
+/**
+ * Has the model restate the idea so the user can check it. A correction from the
+ * user steers the rewrite. If the model fails, the user's own words stand in so
+ * they are never stuck before the questions.
+ */
+export async function summarizeIdea(env: Env, project: ProjectRow, guidance?: string): Promise<string> {
+  let summary = project.idea.trim().slice(0, 600);
+  try {
+    const context = await ensureDigest(env, project);
+    const text = [
+      `The user's idea:\n${project.idea}`,
+      context ? `\nFrom their attachments:\n${context}` : "",
+      guidance && project.summary
+        ? `\nYour previous restatement, which they say is off:\n${project.summary}\n\nTheir correction:\n${guidance}`
+        : "",
+    ].join("\n");
+    const res = await generate(env, {
+      system: SUMMARY_SYSTEM,
+      contents: [{ role: "user", parts: [{ text }] }],
+      schema: SUMMARY_SCHEMA,
+      thinking: "low",
+      temperature: 0.3,
+    });
+    const parsed = parseJson<{ summary?: unknown }>(res.text);
+    if (typeof parsed.summary === "string" && parsed.summary.trim()) summary = parsed.summary.trim().slice(0, 800);
+  } catch (err) {
+    console.error("summary failed", err);
+    // A correction must still land when the model is down: keep the user's words as the paraphrase.
+    if (guidance) summary = guidance.trim().slice(0, 800);
+  }
+  await env.DB.prepare("UPDATE projects SET summary = ?, summary_confirmed = 0, updated_at = ? WHERE id = ?")
+    .bind(summary, now(), project.id)
+    .run();
+  project.summary = summary;
+  project.summary_confirmed = 0;
+  return summary;
+}
+
 interface PlannerOutput {
   title: string;
   questions: { prompt: string; why: string; options: string[] }[];
@@ -84,7 +122,7 @@ export async function planQuestions(env: Env, project: ProjectRow, opts: { keepN
     `Idea: ${project.idea}`,
     project.context ? `\nFrom attachments:\n${project.context}` : "",
     settled.length
-      ? `\nAlready asked:\n${settled.map((q) => `- ${q.prompt} → ${q.skipped ? "(skipped, drafter will decide)" : q.answer}`).join("\n")}`
+      ? `\nAlready asked, in order:\n${settled.map((q) => `- ${q.prompt} → ${q.skipped ? "(skipped, drafter will decide)" : q.answer}`).join("\n")}\n\nMost recent answer: ${settled.at(-1)!.skipped ? "(skipped)" : settled.at(-1)!.answer}. Your first question must follow from it.`
       : "",
     pinned ? `\nAbout to be asked (do not repeat it): ${pinned.prompt}` : "",
     `\nYou may ask at most ${Math.max(0, MAX_QUESTIONS - kept)} more questions.`,
