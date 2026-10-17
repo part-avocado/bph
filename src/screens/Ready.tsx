@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import type { ProjectDetail } from "../../shared/types";
-import { Button, CheckIcon, CmdIcon, EnterIcon, EASE, ErrorText, HintBar, Kbd, Page, chip, rise } from "../components/ui";
+import { Button, CheckIcon, Sep, CmdIcon, EnterIcon, EASE, ErrorText, HintBar, Kbd, Page, chip, rise } from "../components/ui";
 import type { Api } from "../lib/api";
 import { isMac, isTyping, useKeys } from "../lib/keys";
 import { navigate } from "../lib/router";
@@ -88,7 +88,7 @@ export function Ready({ api, detail, onImprove }: { api: Api; detail: ProjectDet
       headerRight={
         <span className={`${chip} mr-1 flex items-center gap-1.5 px-2.5 py-1 font-medium text-ink sm:mr-2`}>
           <span className="size-1.5 rounded-full bg-ok" aria-hidden />
-          Ready{score != null ? <span className="font-mono tabular-nums">· {score}</span> : null}
+          Ready{score != null ? <span className="font-mono tabular-nums"><Sep />{score}</span> : null}
         </span>
       }
     >
@@ -103,7 +103,7 @@ export function Ready({ api, detail, onImprove }: { api: Api; detail: ProjectDet
             Your prompt is ready.
           </motion.h1>
           <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="mt-1.5 text-sm text-mute">
-            {rounds} round{rounds === 1 ? "" : "s"} · {answers} answer{answers === 1 ? "" : "s"} · 0 questions left for Claude
+            {rounds} round{rounds === 1 ? "" : "s"}<Sep />{answers} answer{answers === 1 ? "" : "s"}<Sep />0 questions left for Claude
           </motion.p>
 
           <motion.figure {...rise(0.15, 18)} className="card mt-6 overflow-hidden">

@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { AgentState, LogLine, Project, RunState } from "../../shared/types";
-import { Button, CheckIcon, EASE, EnterIcon, HintBar, Kbd, Page, Skeleton, Spinner, rise } from "../components/ui";
+import { Button, CheckIcon, Sep, EASE, EnterIcon, HintBar, Kbd, Page, Skeleton, Spinner, rise } from "../components/ui";
 import type { Api } from "../lib/api";
 import { isTyping, useKeys } from "../lib/keys";
 import { useRun } from "../lib/useRun";
@@ -83,7 +83,7 @@ function AgentCard({ a, cardRef }: { a: AgentState; cardRef: (el: HTMLDivElement
             a.note
           ) : (
             <>
-              <span className="text-ok">+{a.added}</span> <span className="text-bad/80">−{a.removed}</span> · {fmtTok(a.tokensOut)} tok
+              <span className="text-ok">+{a.added}</span> <span className="text-bad/80">−{a.removed}</span><Sep />{fmtTok(a.tokensOut)} tok
             </>
           )}
         </span>
@@ -601,7 +601,7 @@ export function Construction({ api, project, runId, onDone }: { api: Api; projec
         )}
       </AnimatePresence>
 
-      <Drawer open={panel === "draft"} onClose={() => setPanel(null)} title={draft ? `Draft v${draft.version}${draft.score != null ? ` · ${draft.score}/100` : ""}` : "Draft"} side="right">
+      <Drawer open={panel === "draft"} onClose={() => setPanel(null)} title={draft ? `Draft v${draft.version}${draft.score != null ? ` ∗ ${draft.score}/100` : ""}` : "Draft"} side="right">
         <pre className="px-4 py-5 font-mono text-sm leading-code break-words whitespace-pre-wrap text-ink-2 sm:px-6">{draft?.body}</pre>
       </Drawer>
       <Drawer open={panel === "log"} onClose={() => setPanel(null)} title="Full log" side="bottom">

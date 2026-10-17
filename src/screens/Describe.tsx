@@ -1,7 +1,7 @@
 import { useAuth, useClerk } from "@clerk/react";
 import { AnimatePresence, motion, type Variants } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Button, EASE, EnterIcon, ErrorText, Kbd, Page, ShiftIcon, chip } from "../components/ui";
+import { Button, EASE, EnterIcon, ErrorText, Kbd, Page, Sep, ShiftIcon, chip } from "../components/ui";
 import { useApi } from "../lib/api";
 import { ACCEPT, filesFromDrop, formatBytes, isSupported } from "../lib/files";
 import { isMac } from "../lib/keys";
@@ -293,7 +293,7 @@ export function Describe() {
         </motion.div>
 
         <p className="mt-10 hidden text-xs text-faint sm:block">
-          <Kbd><EnterIcon /></Kbd> start · <Kbd>{isMac ? <ShiftIcon /> : "Shift"}</Kbd> <Kbd><EnterIcon /></Kbd> new line
+          <Kbd><EnterIcon /></Kbd> start<Sep /><Kbd>{isMac ? <ShiftIcon /> : "Shift"}</Kbd> <Kbd><EnterIcon /></Kbd> new line
         </p>
       </main>
     </Page>
