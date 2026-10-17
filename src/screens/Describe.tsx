@@ -8,9 +8,9 @@ import { isMac } from "../lib/keys";
 import { navigate } from "../lib/router";
 
 const EXAMPLES: [string, string][] = [
-  ["Changelog writer", "A tool that lets me turn git history into release notes"],
-  ["Photo renamer", "A CLI that renames my photo library by date taken and location"],
-  ["Standup bot", "A Slack bot that collects daily standups and posts a summary at 10am"],
+  ["Changelog writer", "A skill that turns git history into release notes"],
+  ["PR reviewer", "A skill that reviews my diff against our team style guide before I open a PR"],
+  ["Commit helper", "A skill that writes conventional commit messages from my staged changes"],
 ];
 
 const PENDING_KEY = "offshoot:pending-idea";
@@ -27,7 +27,7 @@ const word: Variants = {
 
 function Headline() {
   const lines = [
-    { text: "Describe a tool.", className: "text-ink" },
+    { text: "Describe a skill.", className: "text-ink" },
     { text: "We'll write the prompt.", className: "text-faint" },
   ];
   let i = 0;
@@ -166,7 +166,7 @@ export function Describe() {
           className={`card mt-10 w-full p-1.5 transition-shadow duration-300 ${dragging ? "ring-2 ring-accent/50" : "focus-within:shadow-card-lift"}`}
         >
           <label htmlFor="idea" className="sr-only">
-            Describe the tool you want
+            Describe the skill you want
           </label>
           <textarea
             id="idea"
@@ -186,7 +186,7 @@ export function Describe() {
                 addFiles(pasted);
               }
             }}
-            placeholder="A tool that lets me turn git history into release notes"
+            placeholder="A skill that turns git history into release notes"
             className="block w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-md outline-none placeholder:text-faint"
             maxLength={4000}
           />

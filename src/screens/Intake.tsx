@@ -1,9 +1,10 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { IntakeState, Project, Question } from "../../shared/types";
-import { ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, Button, CheckIcon, EASE, EnterIcon, ErrorText, HintBar, Kbd, Page, Skeleton, SpaceIcon, Spinner } from "../components/ui";
+import { ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, Button, CheckIcon, EASE, EnterIcon, ErrorText, HintBar, Kbd, Page, SpaceIcon, Skeleton, Thinking } from "../components/ui";
 import type { Api } from "../lib/api";
 import { isTyping, useKeys } from "../lib/keys";
+import { navigate } from "../lib/router";
 
 interface Local {
   choice: number | null;
@@ -25,6 +26,8 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
   const [guidance, setGuidance] = useState("");
   const [rewriting, setRewriting] = useState(false);
   const guidanceRef = useRef<HTMLTextAreaElement>(null);
+  const [lastAnswer, setLastAnswer] = useState<string | null | undefined>(undefined);
+  const [abandoning, setAbandoning] = useState<"ask" | "deleting" | null>(null);
   const [questions, setQuestions] = useState<Question[] | null>(null);
   /** Answers given here that the server may not have confirmed yet. */
   const [pending, setPending] = useState<Record<string, string | null>>({});
@@ -95,6 +98,7 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
     if (!current) return;
     const q = current;
     setDir(1);
+    setLastAnswer(answer);
     setPending((p) => ({ ...p, [q.id]: answer }));
     // The next question is planned from this answer, so wait for it instead of showing a stale one.
     setCurrentId(null);
@@ -134,6 +138,18 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
     if (prevIndex < 0) return;
     setDir(-1);
     setCurrentId(view[prevIndex].id);
+  }
+
+  async function abandon() {
+    setAbandoning("deleting");
+    try {
+      await queue.current;
+      await api.deleteProject(project.id);
+      navigate("/");
+    } catch (e) {
+      setError((e as Error).message);
+      setAbandoning(null);
+    }
   }
 
   async function confirmSummary() {
@@ -297,16 +313,9 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
 
         <AnimatePresence mode="wait" custom={dir}>
           {loading ? (
-            <motion.div key="loading" exit={{ opacity: 0 }} className="space-y-3" aria-busy="true">
-              <p className="mb-6 flex items-center justify-center gap-2 text-base text-mute" role="status">
-                <Spinner /> Reading your idea…
-              </p>
-              <Skeleton className="mx-auto h-9 w-4/5" />
-              <div className="h-4" />
-              {[0, 1, 2].map((i) => (
-                <Skeleton key={i} className="h-11.5 w-full rounded-xl" delay={i * 120} />
-              ))}
-            </motion.div>
+            <Thinking key="loading" title="Reading your idea" detail="Working out what you're after." />
+          ) : reviewing && rewriting && !correcting ? (
+            <Thinking key="planning" title="Lining up your questions" detail="Only what changes the build, one at a time." />
           ) : reviewing ? (
             <motion.section
               key="review"
@@ -319,18 +328,32 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
               <h2 id="review-title" className="text-center text-title font-semibold tracking-title text-balance sm:text-title-lg">
                 Did we get that right?
               </h2>
-              <p className="mt-2 text-center text-sm text-pretty text-mute">Here's what we understood. Confirm it, or tell us what to change.</p>
+              <p className="mt-2 text-center text-sm text-pretty text-mute">Confirm it, or tell us what to change.</p>
 
-              <blockquote className="card mt-7 p-4 text-md leading-relaxed text-pretty sm:p-5" aria-live="polite">
-                {rewriting && !correcting ? (
-                  <span className="flex items-center gap-2 text-mute">
-                    <Spinner /> Working on it…
-                  </span>
-                ) : (
-                  summary
-                )}
-              </blockquote>
-              <p className="mt-3 line-clamp-2 px-1 text-center text-xs text-pretty text-faint">You wrote: {project.idea}</p>
+              <div className="card mt-7 overflow-hidden p-0">
+                <div className="p-5 sm:p-6">
+                  <p className="flex items-center gap-1.5 font-mono text-2xs tracking-wide text-faint uppercase">
+                    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden>
+                      <path d="M6 1v3M6 8v3M1 6h3M8 6h3M2.8 2.8l1.6 1.6M7.6 7.6l1.6 1.6M9.2 2.8 7.6 4.4M4.4 7.6 2.8 9.2" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+                    </svg>
+                    Our read
+                  </p>
+                  {rewriting ? (
+                    <div className="mt-3 space-y-2" aria-label="Rewriting">
+                      <Skeleton className="h-5 w-full" />
+                      <Skeleton className="h-5 w-4/5" delay={120} />
+                    </div>
+                  ) : (
+                    <p className="mt-2.5 text-lg leading-snug font-medium tracking-snug text-pretty" aria-live="polite">
+                      {summary}
+                    </p>
+                  )}
+                </div>
+                <div className="border-t border-line-2 bg-wash/70 px-5 py-3 sm:px-6">
+                  <p className="font-mono text-2xs tracking-wide text-faint uppercase">You wrote</p>
+                  <p className="mt-1 line-clamp-3 text-sm text-pretty text-mute">{project.idea}</p>
+                </div>
+              </div>
 
               <AnimatePresence initial={false} mode="wait">
                 {correcting ? (
@@ -478,11 +501,11 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
               </div>
             </motion.section>
           ) : thinking ? (
-            <motion.div key="thinking" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center">
-              <p className="flex items-center justify-center gap-2 text-base text-mute" role="status">
-                <Spinner /> Thinking about what to ask next…
-              </p>
-            </motion.div>
+            <Thinking
+              key="thinking"
+              title="Thinking about what to ask next"
+              detail={lastAnswer === undefined ? undefined : lastAnswer === null ? "Skipped. We'll decide that part." : <>Noted: <span className="text-ink-2">{lastAnswer}</span></>}
+            />
           ) : (
             <motion.section
               key="done"
@@ -530,6 +553,37 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
           )}
         </AnimatePresence>
       </main>
+
+      {!loading && (
+        <div className="fixed bottom-5 left-4 z-20 flex items-center gap-2 text-xs sm:left-6">
+          {abandoning ? (
+            <>
+              <span className="text-mute">{abandoning === "deleting" ? "Deleting…" : "Delete this skill?"}</span>
+              {abandoning === "ask" && (
+                <>
+                  <button type="button" onClick={() => void abandon()} className="rounded-md px-1.5 py-1 font-medium text-bad transition-colors hover:bg-bad/10">
+                    Delete
+                  </button>
+                  <button type="button" onClick={() => setAbandoning(null)} className="rounded-md px-1.5 py-1 text-mute transition-colors hover:text-ink">
+                    Keep
+                  </button>
+                </>
+              )}
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAbandoning("ask")}
+              className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-faint transition-colors hover:bg-bad/10 hover:text-bad"
+            >
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden>
+                <path d="M2.5 3.5h7M5 3.5V2.2h2v1.3M3.5 3.5l.4 6h4.2l.4-6M5.2 5.3v2.6M6.8 5.3v2.6" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Abandon
+            </button>
+          )}
+        </div>
+      )}
 
       <HintBar
         hints={

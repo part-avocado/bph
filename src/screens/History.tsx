@@ -68,7 +68,7 @@ export function History({ api }: { api: Api }) {
   return (
     <Page tint="lilac" title="History">
       <main className="relative z-10 mx-auto max-w-list px-4 pt-6 pb-28">
-        <h1 className="text-title font-semibold tracking-display">Your tools</h1>
+        <h1 className="text-title font-semibold tracking-display">Your skills</h1>
         <p className="mt-1 text-sm text-mute">Every prompt you've made. Open one to copy it or improve it again.</p>
 
         <AnimatePresence>
@@ -93,15 +93,15 @@ export function History({ api }: { api: Api }) {
             <EmptyState
               className="px-6 py-14"
               title="Nothing here yet"
-              body="Describe your first tool and it will show up here."
+              body="Describe your first skill and it will show up here."
               action={
                 <Button size="sm" onClick={() => navigate("/")}>
-                  Describe a tool
+                  Describe a skill
                 </Button>
               }
             />
           ) : (
-            <ul className="divide-y divide-line-2" aria-label="Your tools">
+            <ul className="divide-y divide-line-2" aria-label="Your skills">
               <AnimatePresence initial={false}>
                 {items.map((p, i) => (
                   <motion.li
@@ -167,7 +167,7 @@ export function History({ api }: { api: Api }) {
             "move",
           ],
           [<Kbd key="e"><EnterIcon /></Kbd>, "open"],
-          [<Kbd key="n">N</Kbd>, "new tool"],
+          [<Kbd key="n">N</Kbd>, "new skill"],
         ]}
       />
     </Page>

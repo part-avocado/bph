@@ -1,5 +1,5 @@
 import { Show, SignInButton, UserButton } from "@clerk/react";
-import { motion, type HTMLMotionProps } from "motion/react";
+import { motion, useReducedMotion, type HTMLMotionProps } from "motion/react";
 import type { AnchorHTMLAttributes, HTMLAttributes, MouseEvent, ReactNode } from "react";
 import { navigate } from "../lib/router";
 
@@ -247,6 +247,54 @@ export function Spinner({ className = "", label }: { className?: string; label?:
 }
 
 // ---------- states ----------
+
+/**
+ * Full-width waiting state between steps: a slow orbiting mark, what is happening,
+ * and faint placeholder rows so the next screen doesn't make the layout jump.
+ */
+export function Thinking({ title, detail, rows = 3 }: { title: string; detail?: ReactNode; rows?: number }) {
+  const reduce = useReducedMotion();
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0, transition: { duration: 0.4, ease: EASE } }}
+      exit={{ opacity: 0, transition: { duration: 0.15 } }}
+      className="text-center"
+      role="status"
+      aria-live="polite"
+    >
+      <svg width="52" height="52" viewBox="0 0 52 52" fill="none" className="mx-auto" aria-hidden>
+        <circle cx="26" cy="26" r="21" stroke="currentColor" strokeOpacity="0.1" strokeWidth="2" />
+        <motion.g
+          style={{ originX: "26px", originY: "26px" }}
+          animate={reduce ? undefined : { rotate: 360 }}
+          transition={{ duration: 2.4, ease: "linear", repeat: Infinity }}
+        >
+          <path d="M26 5a21 21 0 0 1 21 21" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+          <circle cx="26" cy="5" r="2.6" fill="currentColor" />
+        </motion.g>
+        <motion.circle
+          cx="26"
+          cy="26"
+          r="4"
+          fill="currentColor"
+          animate={reduce ? undefined : { scale: [1, 1.5, 1], opacity: [0.9, 0.35, 0.9] }}
+          style={{ originX: "26px", originY: "26px" }}
+          transition={{ duration: 1.8, ease: "easeInOut", repeat: Infinity }}
+        />
+      </svg>
+      <p className="mt-5 text-title font-semibold tracking-title text-balance">{title}</p>
+      {detail && <p className="mx-auto mt-2 max-w-sm text-sm text-pretty text-mute">{detail}</p>}
+      {rows > 0 && (
+        <div className="mx-auto mt-9 w-full max-w-narrow space-y-2 opacity-70" aria-hidden>
+          {Array.from({ length: rows }, (_, i) => (
+            <Skeleton key={i} className="h-11.5 w-full rounded-xl" delay={i * 140} />
+          ))}
+        </div>
+      )}
+    </motion.div>
+  );
+}
 
 export function Skeleton({ className = "", delay = 0 }: { className?: string; delay?: number }) {
   return <div className={`shimmer ${className}`} style={delay ? { animationDelay: `${delay}ms` } : undefined} aria-hidden />;

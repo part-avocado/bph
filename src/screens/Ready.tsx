@@ -178,7 +178,7 @@ export function Ready({ api, detail, onImprove }: { api: Api; detail: ProjectDet
           </section>
 
           <Button variant="secondary" onClick={() => navigate("/")} kbd="N" className="w-full rounded-xl text-sm font-normal">
-            Start a new tool
+            Start a new skill
           </Button>
           <Button variant="ghost" size="xs" onClick={download} className="w-full font-normal">
             Download prompt.md
@@ -199,7 +199,7 @@ export function Ready({ api, detail, onImprove }: { api: Api; detail: ProjectDet
         hints={[
           [<Kbd key="c">{isMac ? <CmdIcon /> : "Ctrl"}<EnterIcon /></Kbd>, "copy"],
           [<Kbd key="i">I</Kbd>, "improve"],
-          [<Kbd key="n">N</Kbd>, "new tool"],
+          [<Kbd key="n">N</Kbd>, "new skill"],
         ]}
       />
     </Page>
