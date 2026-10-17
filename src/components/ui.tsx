@@ -226,7 +226,7 @@ function McpHint() {
 
 export function Header({ title, right }: { title?: string; right?: ReactNode }) {
   return (
-    <header className="relative z-30flex h-16 items-center justify-between gap-3 px-4 sm:px-7">
+    <header className="relative z-30 flex h-16 items-center justify-between gap-3 px-4 sm:px-7">
       <Link
         to="/"
         className="group flex min-w-0 items-center gap-2.5 rounded-lg py-1 pr-2 text-base font-semibold tracking-snug"

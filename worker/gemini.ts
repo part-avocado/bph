@@ -47,10 +47,10 @@ export class GeminiError extends Error {
   }
 }
 
-/** Gemma on the Gemini API only documents "minimal" (thinking off) and "high" (on). */
+/** Gemma on the Gemini API only documents "minimal" (thinking off) and "high" (on), so the cheap tiers turn it off. */
 function thinkingFor(model: string, level: ThinkingLevel): ThinkingLevel {
   if (!model.startsWith("gemma")) return level;
-  return level === "minimal" ? "minimal" : "high";
+  return level === "minimal" || level === "low" ? "minimal" : "high";
 }
 
 function buildBody(model: string, req: GenerateRequest) {

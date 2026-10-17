@@ -4,7 +4,7 @@
 interface __BaseEnv_Env {
 	UPLOADS: R2Bucket;
 	DB: D1Database;
-	GEMINI_MODEL: "gemma-4-31b-it";
+	GEMINI_MODEL: "gemini-3.6-flash";
 	GEMINI_BASE_URL: "https://generativelanguage.googleapis.com";
 	AUTHORIZED_PARTIES: "http://localhost:5173";
 	DAILY_RUN_LIMIT: "20";
