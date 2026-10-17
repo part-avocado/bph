@@ -148,6 +148,52 @@ export function ThemeToggle() {
   );
 }
 
+/** Header pill that shows how to connect an agent to this app's MCP endpoint. */
+function McpHint() {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const url = `${window.location.origin}/mcp`;
+  const command = `claude mcp add --transport http offshoot ${url}`;
+  const copy = () => {
+    navigator.clipboard?.writeText(command).then(
+      () => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1600);
+      },
+      () => undefined,
+    );
+  };
+  return (
+    <div
+      className="relative hidden sm:block"
+      onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
+      onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && setOpen(false)}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="rounded-full px-2.5 py-1.5 text-xs text-mute transition-colors hover:text-ink"
+      >
+        Add MCP server
+      </button>
+      {open && (
+        <div role="dialog" aria-label="Add MCP server" className="absolute right-0 top-full z-20 mt-2 w-80 rounded-2xl bg-paper p-4 text-xs text-ink-2 shadow-outline backdrop-blur-md">
+          <p className="font-medium text-ink">Let an agent build skills here</p>
+          <p className="mt-1 text-mute">Run this in your terminal, then sign in when asked.</p>
+          <code className="mt-3 block break-all rounded-lg bg-ink/5 p-2.5 font-mono text-[11px] leading-relaxed text-ink">{command}</code>
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <span className="truncate text-mute">{url}</span>
+            <button type="button" onClick={copy} className={`${chip} shrink-0 px-3 py-1.5 font-medium text-ink hover:bg-paper`}>
+              {copied ? "Copied" : "Copy command"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Header({ title, right }: { title?: string; right?: ReactNode }) {
   return (
     <header className="relative z-10 flex h-16 items-center justify-between gap-3 px-4 sm:px-7">
@@ -177,6 +223,7 @@ export function Header({ title, right }: { title?: string; right?: ReactNode }) 
           <Link to="/" className={`${chip} hidden px-3.5 py-1.5 font-medium text-ink hover:bg-paper sm:block`}>
             New
           </Link>
+          <McpHint />
           <div className="ml-1 flex size-7 items-center justify-center">
             <UserButton />
           </div>

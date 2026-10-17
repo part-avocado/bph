@@ -1,9 +1,8 @@
 import { verifyWebhook } from "@clerk/backend/webhooks";
 import { Hono } from "hono";
-import type { IntakeState, ProjectDetail, Question } from "../shared/types";
+import type { ProjectDetail } from "../shared/types";
 import { requireUser } from "./auth";
 import {
-  buildBrief,
   getProjectRow,
   getQuestions,
   latestVersionStmt,
@@ -20,7 +19,8 @@ import {
 } from "./db";
 import { GeminiError } from "./gemini";
 import { isInlineMime, planQuestions, summarizeIdea } from "./intake";
-import type { RunConfig } from "./run";
+import { mcpApp } from "./mcp";
+import { answerQuestion, loadIntake, startRun, toIntakeState } from "./service";
 
 export { RunObject } from "./run";
 
@@ -81,6 +81,7 @@ async function deleteUserData(env: Env, userId: string) {
   await env.DB.batch([
     env.DB.prepare("DELETE FROM runs WHERE user_id = ?").bind(userId),
     env.DB.prepare("DELETE FROM run_starts WHERE user_id = ?").bind(userId),
+    env.DB.prepare("DELETE FROM mcp_calls WHERE user_id = ?").bind(userId),
     env.DB.prepare("DELETE FROM projects WHERE user_id = ?").bind(userId),
     env.DB.prepare("DELETE FROM users WHERE id = ?").bind(userId),
   ]);
@@ -200,20 +201,6 @@ app.delete("/projects/:id", async (c) => {
   return c.json({ ok: true });
 });
 
-const toIntakeState = (row: ProjectRow, questions: Question[]): IntakeState => ({
-  project: toProject(row),
-  questions,
-  complete: !!row.intake_complete,
-  summary: row.summary,
-  summaryConfirmed: !!row.summary_confirmed,
-});
-
-/** Reads the project and its questions in one round trip. */
-async function loadIntake(db: D1Database, projectId: string, userId: string) {
-  const [p, q] = await db.batch([projectStmt(db, projectId, userId), questionsStmt(db, projectId)]);
-  return { row: p.results[0] as ProjectRow | undefined, questions: toQuestions(q.results as QuestionRow[]) };
-}
-
 /** First call plans the questions; later calls return what's already planned. */
 app.post("/projects/:id/plan", async (c) => {
   const { row, questions } = await loadIntake(c.env.DB, c.req.param("id"), c.get("userId"));
@@ -265,34 +252,7 @@ app.post("/projects/:id/answers", async (c) => {
     return c.json({ error: "Missing question." }, 400);
   }
   if (body.answer != null && typeof body.answer !== "string") return c.json({ error: "Answers must be text." }, 400);
-  const answer = body.answer?.trim().slice(0, 1000) || null;
-  const skipped = answer ? 0 : 1;
-
-  const res = await c.env.DB.prepare("UPDATE questions SET answer = ?, skipped = ? WHERE id = ? AND project_id = ?")
-    .bind(answer, skipped, body.questionId, row.id)
-    .run();
-  if (!res.meta.changes) {
-    // The question was replaced by a re-plan while the user was answering it. Keep the answer anyway,
-    // placed just before the first open slot (counted and inserted in one statement).
-    // OR IGNORE: the id comes from the client, so never let it collide with another project's question.
-    await c.env.DB.prepare(
-      `INSERT OR IGNORE INTO questions (id, project_id, idx, prompt, why, options, answer, skipped)
-       SELECT ?, ?, COUNT(*) - 0.5, ?, '', '[]', ?, ? FROM questions WHERE project_id = ? AND (answer IS NOT NULL OR skipped = 1)`,
-    )
-      .bind(body.questionId, row.id, String(body.prompt ?? "").slice(0, 300), answer, skipped, row.id)
-      .run();
-  }
-  if (body.replan !== false) {
-    // The answer is saved either way; a failed re-plan just keeps the questions already planned.
-    try {
-      const planned = await planQuestions(c.env, row);
-      return c.json(toIntakeState(planned.row, planned.questions));
-    } catch (err) {
-      console.error("replan failed", err);
-    }
-  }
-  const fresh = await loadIntake(c.env.DB, row.id, userId);
-  return c.json(toIntakeState(fresh.row ?? row, fresh.questions));
+  return c.json(await answerQuestion(c.env, row, userId, { ...body, questionId: body.questionId, answer: body.answer as string | null | undefined }));
 });
 
 app.post("/projects/:id/runs", async (c) => {
@@ -300,69 +260,8 @@ app.post("/projects/:id/runs", async (c) => {
   const row = await getProjectRow(c.env.DB, c.req.param("id"), userId);
   if (!row) return c.json({ error: "Not found" }, 404);
   const { improve } = await c.req.json<{ improve?: boolean }>().catch(() => ({ improve: false }));
-
-  // Everything the decision needs, fetched at once: the daily count, the brief's questions and
-  // the base version in one D1 batch, alongside the active run's state from its Durable Object.
-  const db = c.env.DB;
-  const since = now() - 24 * 60 * 60 * 1000;
-  const [[used, q, v], existing] = await Promise.all([
-    db.batch([
-      db.prepare("SELECT COUNT(*) AS n FROM run_starts WHERE user_id = ? AND created_at > ?").bind(userId, since),
-      questionsStmt(db, row.id),
-      ...(improve ? [latestVersionStmt(db, row.id)] : []),
-    ]),
-    row.active_run_id && row.status === "building" ? c.env.RUN.get(c.env.RUN.idFromName(row.active_run_id)).getState() : null,
-  ]);
-  // A run that's still going is returned as-is, and doesn't count against the daily limit.
-  if (existing && existing.status !== "done" && existing.status !== "failed") return c.json({ runId: row.active_run_id });
-  if (((used.results[0] as { n: number } | undefined)?.n ?? 0) >= Number(c.env.DAILY_RUN_LIMIT)) {
-    return c.json({ error: `You've used today's ${c.env.DAILY_RUN_LIMIT} runs. They refill over the next 24 hours.` }, 429);
-  }
-
-  const base = v ? toVersion(v.results[0] as VersionRow | undefined) : null;
-  const runId = newId();
-  const config: RunConfig = {
-    runId,
-    projectId: row.id,
-    userId,
-    brief: buildBrief(row, toQuestions(q.results as QuestionRow[])),
-    maxRounds: improve ? 2 : 3,
-    // Improving an already-strong prompt should still aim higher than where it is.
-    targetScore: base?.score != null ? Math.min(99, Math.max(95, base.score + 2)) : 95,
-    tokenBudget: Number(c.env.RUN_TOKEN_BUDGET),
-    base: base ? { id: base.id, version: base.version, body: base.body, score: base.score } : null,
-  };
-  // Claim the project only if nobody else started a run since we read it (double clicks, two tabs).
-  const claim = await c.env.DB.prepare(
-    "UPDATE projects SET status = 'building', intake_complete = 1, active_run_id = ?, updated_at = ? WHERE id = ? AND active_run_id IS ?",
-  )
-    .bind(runId, now(), row.id, row.active_run_id)
-    .run();
-  if (!claim.meta.changes) {
-    const current = await getProjectRow(c.env.DB, row.id, userId);
-    if (current?.active_run_id && current.status === "building") return c.json({ runId: current.active_run_id });
-    return c.json({ error: "This tool changed while starting. Try again." }, 409);
-  }
-  await c.env.DB.batch([
-    c.env.DB.prepare("INSERT INTO runs (id, project_id, user_id, status, created_at) VALUES (?, ?, ?, 'running', ?)").bind(runId, row.id, userId, now()),
-    c.env.DB.prepare("INSERT INTO run_starts (id, user_id, created_at) VALUES (?, ?, ?)").bind(runId, userId, now()),
-  ]);
-  try {
-    await c.env.RUN.get(c.env.RUN.idFromName(runId)).start(config);
-  } catch (err) {
-    // Don't leave the project pointing at a run that never started.
-    await c.env.DB.batch([
-      c.env.DB.prepare("UPDATE projects SET status = ?, active_run_id = ? WHERE id = ? AND active_run_id = ?").bind(
-        row.status,
-        row.active_run_id,
-        row.id,
-        runId,
-      ),
-      c.env.DB.prepare("UPDATE runs SET status = 'failed' WHERE id = ?").bind(runId),
-    ]);
-    throw err;
-  }
-  return c.json({ runId });
+  const res = await startRun(c.env, row, userId, improve);
+  return "error" in res ? c.json({ error: res.error }, res.status) : c.json(res);
 });
 
 app.get("/runs/:id/ws", async (c) => {
@@ -373,4 +272,9 @@ app.get("/runs/:id/ws", async (c) => {
   return c.env.RUN.get(c.env.RUN.idFromName(runId)).fetch(c.req.raw);
 });
 
-export default app;
+// The MCP endpoint and its OAuth discovery documents live outside /api.
+const root = new Hono<AppEnv>();
+root.route("/", mcpApp);
+root.route("/", app);
+
+export default root;
