@@ -24,29 +24,67 @@ const BROWSER_ORIGINS = ["https://claude.ai"];
 
 // ---------- helpers ----------
 
-class ToolError extends Error {}
+type ErrorCode =
+  | "SIGN_IN_REQUIRED"
+  | "NOT_FOUND"
+  | "INVALID_INPUT"
+  | "WRONG_STEP"
+  | "LIMIT_REACHED"
+  | "MODEL_BUSY"
+  | "MODEL_REJECTED"
+  | "MODEL_BAD_REPLY"
+  | "MODEL_UNAVAILABLE"
+  | "INTERNAL";
+
+/** An expected failure. `code` lets the agent branch; `hint` tells it what to do instead. */
+class ToolError extends Error {
+  constructor(
+    message: string,
+    readonly code: ErrorCode = "WRONG_STEP",
+    readonly hint?: string,
+    readonly retryAfterSeconds?: number,
+  ) {
+    super(message);
+  }
+}
 
 type Extra = { authInfo?: { extra?: Record<string, unknown> } };
 
 /** The signed-in user, read from this request's verified token and nowhere else. */
 function userOf(extra: Extra): string {
   const id = extra.authInfo?.extra?.userId;
-  if (typeof id !== "string" || !id) throw new ToolError("Sign in to continue.");
+  if (typeof id !== "string" || !id) throw new ToolError("Sign in to continue.", "SIGN_IN_REQUIRED", "Re-authenticate the offshoot MCP server (/mcp in Claude Code).");
   return id;
 }
 
 const ok = (data: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] });
-const fail = (message: string) => ({ isError: true, content: [{ type: "text" as const, text: message }] });
+const fail = (message: string, code: ErrorCode, extra: { hint?: string; retryAfterSeconds?: number } = {}) => ({
+  isError: true,
+  content: [{ type: "text" as const, text: JSON.stringify({ error: { code, message, retryable: extra.retryAfterSeconds !== undefined, ...extra } }, null, 2) }],
+});
+
+/** Maps a model failure to a message the agent can act on, without leaking provider detail. */
+function modelFailure(err: GeminiError) {
+  const hint = "Nothing was lost; your progress is saved.";
+  if (err.status === 429) return fail("The model is rate limited right now.", "MODEL_BUSY", { hint: `${hint} Retry the same call.`, retryAfterSeconds: 30 });
+  if (err.status === 0 || (err.status >= 500 && err.status !== 502)) return fail("The model didn't respond.", "MODEL_BUSY", { hint: `${hint} Retry the same call.`, retryAfterSeconds: 15 });
+  if (err.status === 502) return fail("The model sent back something unreadable.", "MODEL_BAD_REPLY", { hint: `${hint} Retry the same call; if it repeats, reword the idea.`, retryAfterSeconds: 5 });
+  if (err.status === 400) return fail("The model declined this request.", "MODEL_REJECTED", { hint: "Reword the idea or correction and try again." });
+  return fail("The model service is misconfigured or unavailable.", "MODEL_UNAVAILABLE", { hint: "This is a server problem. Tell the user rather than retrying." });
+}
 
 /** Runs a tool body, turning expected failures into messages the agent can act on. */
 async function guard(run: () => Promise<unknown>) {
   try {
     return ok(await run());
   } catch (err) {
-    if (err instanceof ToolError) return fail(err.message);
-    if (err instanceof GeminiError) return fail("The model is busy or unavailable right now. Try again in a moment.");
+    if (err instanceof ToolError) return fail(err.message, err.code, { hint: err.hint, retryAfterSeconds: err.retryAfterSeconds });
+    if (err instanceof GeminiError) {
+      console.error("mcp model call failed", err.status, err.message);
+      return modelFailure(err);
+    }
     console.error("mcp tool failed", err);
-    return fail("Something went wrong on our side. Try again in a moment.");
+    return fail("Something went wrong on our side.", "INTERNAL", { hint: "Retry once; if it repeats, tell the user.", retryAfterSeconds: 10 });
   }
 }
 
@@ -57,12 +95,12 @@ async function spendModelCall(env: Env, userId: string) {
   )
     .bind(userId, now(), now() - DAY_MS, MODEL_CALL_LIMIT)
     .run();
-  if (!res.meta.changes) throw new ToolError(`You've used today's ${MODEL_CALL_LIMIT} model-backed calls. They refill over the next 24 hours.`);
+  if (!res.meta.changes) throw new ToolError(`You've used today's ${MODEL_CALL_LIMIT} model-backed calls.`, "LIMIT_REACHED", "They refill over the next 24 hours. Tell the user; don't retry.");
 }
 
 async function ownedProject(env: Env, id: string, userId: string) {
   const row = await getProjectRow(env.DB, id, userId);
-  if (!row) throw new ToolError("No skill with that id.");
+  if (!row) throw new ToolError("No skill with that id.", "NOT_FOUND", "Call list_skills for valid ids.");
   return row;
 }
 
@@ -72,8 +110,8 @@ const idArg = z.string().min(1).max(64).describe("The skill id from list_skills 
 function nextStep(row: { status: string; summary: string | null; summary_confirmed: number }, intake: { complete: boolean; open: number }) {
   if (row.status === "building") return "A build is running. Call get_build until it finishes.";
   if (row.status === "ready") return "The prompt is ready. Call get_build to read it, or start_build with improve=true to raise the score.";
-  if (!row.summary_confirmed) return "Show the summary to the user. If it is right, call review_summary with no guidance. If it is off, call review_summary with their correction.";
-  if (intake.open) return "Ask the user the open question (offer its options), then call answer_question with their reply. Pass no answer to skip it.";
+  if (!row.summary_confirmed) return "Check the summary against what the user asked for. If it matches, call review_summary with no guidance (no need to ask the user). If it misses something, call review_summary with a correction, taken from the user's own request.";
+  if (intake.open) return "If the user already answered this in their request, call answer_question with that. Otherwise ask the user (offer its options) and pass their reply. Pass no answer to skip it.";
   if (intake.complete) return "Intake is complete. Call start_build.";
   return "Call get_skill again to plan the questions.";
 }
@@ -83,7 +121,7 @@ function nextStep(row: { status: string; summary: string | null; summary_confirm
 function buildServer(env: Env) {
   const server = new McpServer({ name: "offshoot", version: "1.0.0" }, {
     instructions:
-      "Offshoot turns an idea into a finished build prompt for a Claude Code / Codex skill. Flow: create_skill, review_summary (confirm what was understood), answer_question for each question the user should decide, start_build, get_build until done, then use the returned prompt to write the skill. Always let the user confirm the summary and answer questions rather than answering for them.",
+      "Offshoot turns an idea into a finished build prompt for a Claude Code / Codex skill. Flow: create_skill, review_summary (confirm what was understood), answer_question for each question the user should decide, start_build, get_build until done, then use the returned prompt to write the skill. You decide whether the summary is right: compare it with what the user asked for and confirm it yourself with review_summary, or send a correction as guidance. Only involve the user if their request is genuinely ambiguous. Ask the user the intake questions unless their request already answers them; answer those from what they said, and skip the rest.",
   });
 
   const read = { readOnlyHint: true, openWorldHint: false } as const;
@@ -110,7 +148,7 @@ function buildServer(env: Env) {
     {
       title: "Create a skill",
       description:
-        "Starts a new skill from an idea. Describe what the skill should do in the user's words. Follow with get_skill to receive the summary the user must confirm.",
+        "Starts a new skill from an idea. Describe what the skill should do in the user's words. Follow with get_skill to receive the summary, which you check against the request.",
       inputSchema: {
         idea: z.string().min(3).max(MAX_IDEA).describe("What the skill should do, in plain words."),
         details: z.string().max(MAX_DETAILS).optional().describe("Optional longer context: conventions, examples, constraints the user supplied."),
@@ -121,11 +159,11 @@ function buildServer(env: Env) {
       guard(async () => {
         const userId = userOf(extra);
         const trimmed = idea.trim();
-        if (trimmed.length < 3) throw new ToolError("Describe the skill in a few words first.");
+        if (trimmed.length < 3) throw new ToolError("Describe the skill in a few words first.", "INVALID_INPUT");
         const used = await env.DB.prepare("SELECT COUNT(*) AS n FROM projects WHERE user_id = ? AND created_at > ?")
           .bind(userId, now() - DAY_MS)
           .first<{ n: number }>();
-        if ((used?.n ?? 0) >= PROJECT_LIMIT) throw new ToolError(`You've created ${PROJECT_LIMIT} skills in the last 24 hours. Try again later.`);
+        if ((used?.n ?? 0) >= PROJECT_LIMIT) throw new ToolError(`You've created ${PROJECT_LIMIT} skills in the last 24 hours.`, "LIMIT_REACHED", "Reuse an existing skill from list_skills, or tell the user to try tomorrow.");
 
         const id = newId();
         const t = now();
@@ -136,7 +174,7 @@ function buildServer(env: Env) {
         )
           .bind(id, userId, trimmed.split(/\s+/).slice(0, 4).join(" ").slice(0, 40), full, t, t)
           .run();
-        return { id, next: "Call get_skill to receive the summary for the user to confirm." };
+        return { id, next: "Call get_skill to receive the summary to check." };
       }),
   );
 
@@ -145,7 +183,7 @@ function buildServer(env: Env) {
     {
       title: "Get a skill's state",
       description:
-        "Returns where a skill is: the summary awaiting confirmation, the questions (the first unanswered one is the one to ask), answers so far, and the latest score. Planning the summary or questions happens on demand here, so call it after create_skill and after confirming the summary.",
+        "Returns where a skill is: the summary awaiting your check, the questions (the first unanswered one is the one to ask), answers so far, and the latest score. Planning the summary or questions happens on demand here, so call it after create_skill and after confirming the summary.",
       inputSchema: { id: idArg },
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
     },
@@ -153,7 +191,7 @@ function buildServer(env: Env) {
       guard(async () => {
         const userId = userOf(extra);
         let { row, questions } = await loadIntake(env.DB, id, userId);
-        if (!row) throw new ToolError("No skill with that id.");
+        if (!row) throw new ToolError("No skill with that id.", "NOT_FOUND", "Call list_skills for valid ids.");
         if (row.status === "intake") {
           if (!row.summary_confirmed) {
             if (!row.summary) {
@@ -190,7 +228,7 @@ function buildServer(env: Env) {
     {
       title: "Confirm or correct the summary",
       description:
-        "Call with no guidance once the user agrees the summary captures their idea; this plans the questions. Call with guidance (the user's correction, in their words) to have the summary rewritten, then show the new one.",
+        "Call with no guidance once the summary matches what the user asked for (you judge this; don't ask them); this plans the questions. Call with guidance (what the summary got wrong, grounded in the user's request) to have it rewritten, then check the new one the same way.",
       inputSchema: { id: idArg, guidance: z.string().max(1000).optional().describe("The user's correction. Omit to confirm.") },
       annotations: write,
     },
@@ -198,15 +236,15 @@ function buildServer(env: Env) {
       guard(async () => {
         const userId = userOf(extra);
         const { row, questions } = await loadIntake(env.DB, id, userId);
-        if (!row) throw new ToolError("No skill with that id.");
-        if (row.status !== "intake") throw new ToolError("This skill is past intake.");
+        if (!row) throw new ToolError("No skill with that id.", "NOT_FOUND", "Call list_skills for valid ids.");
+        if (row.status !== "intake") throw new ToolError("This skill is past intake.", "WRONG_STEP", "Call get_build to see its build, or start_build with improve=true.");
         const fix = guidance?.trim();
         if (fix) {
           await spendModelCall(env, userId);
           await summarizeIdea(env, row, fix);
-          return { summary: row.summary, next: "Show the new summary to the user. Confirm with review_summary (no guidance) when it's right." };
+          return { summary: row.summary, next: "Check the new summary against the request. Confirm with review_summary (no guidance) when it matches." };
         }
-        if (!row.summary) throw new ToolError("There is no summary yet. Call get_skill first.");
+        if (!row.summary) throw new ToolError("There is no summary yet.", "WRONG_STEP", "Call get_skill first to generate it.");
         if (!row.summary_confirmed) {
           await env.DB.prepare("UPDATE projects SET summary_confirmed = 1, updated_at = ? WHERE id = ?").bind(now(), row.id).run();
           row.summary_confirmed = 1;
@@ -225,7 +263,7 @@ function buildServer(env: Env) {
     {
       title: "Answer an intake question",
       description:
-        "Records the user's answer to the open question from get_skill and re-plans the remaining questions. Omit answer to skip (the drafter then decides). Only pass answers the user gave.",
+        "Records the user's answer to the open question from get_skill and re-plans the remaining questions. Omit answer to skip (the drafter then decides). Only pass answers the user gave or clearly implied.",
       inputSchema: {
         id: idArg,
         questionId: z.string().min(1).max(64),
@@ -237,9 +275,9 @@ function buildServer(env: Env) {
       guard(async () => {
         const userId = userOf(extra);
         const row = await ownedProject(env, id, userId);
-        if (row.status !== "intake") throw new ToolError("This skill is past intake.");
+        if (row.status !== "intake") throw new ToolError("This skill is past intake.", "WRONG_STEP", "Call get_build to see its build, or start_build with improve=true.");
         const asked = (await getQuestions(env.DB, row.id)).find((q) => q.id === questionId);
-        if (!asked) throw new ToolError("That question isn't part of this skill. Call get_skill for the current one.");
+        if (!asked) throw new ToolError("That question isn't part of this skill.", "INVALID_INPUT", "Call get_skill for the current open question.");
         await spendModelCall(env, userId);
         const state = await answerQuestion(env, row, userId, { questionId, prompt: asked.prompt, answer });
         const open = state.questions.find((q) => q.answer === null && !q.skipped);
@@ -264,9 +302,9 @@ function buildServer(env: Env) {
       guard(async () => {
         const userId = userOf(extra);
         const row = await ownedProject(env, id, userId);
-        if (row.status === "intake" && !row.summary_confirmed) throw new ToolError("Confirm the summary with review_summary first.");
+        if (row.status === "intake" && !row.summary_confirmed) throw new ToolError("The summary hasn't been confirmed.", "WRONG_STEP", "Call review_summary with no guidance, then answer the questions.");
         const res = await startRun(env, row, userId, improve);
-        if ("error" in res) throw new ToolError(res.error);
+        if ("error" in res) throw new ToolError(res.error, res.status === 429 ? "LIMIT_REACHED" : "WRONG_STEP", res.status === 429 ? "Tell the user; the daily run limit refills over 24 hours." : undefined);
         return { runId: res.runId, next: "Call get_build every 15-30 seconds until status is done." };
       }),
   );
@@ -291,7 +329,7 @@ function buildServer(env: Env) {
               .bind(row.id, version)
               .first<{ version: number; body: string; score: number | null }>()
           : await getLatestVersion(env.DB, row.id);
-        if (version && !draft) throw new ToolError(`No version ${version} for this skill.`);
+        if (version && !draft) throw new ToolError(`No version ${version} for this skill.`, "NOT_FOUND", "Omit version to get the latest.");
         return {
           status: run?.status ?? (row.status === "ready" ? "done" : "not_started"),
           round: run?.round ?? null,

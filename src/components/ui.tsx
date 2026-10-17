@@ -148,12 +148,28 @@ export function ThemeToggle() {
   );
 }
 
+type McpClient = { id: string; label: string; hint: string; snippet: (url: string) => string };
+
+const json = (key: string, url: string) => JSON.stringify({ mcpServers: { offshoot: { [key]: url } } }, null, 2);
+
+const MCP_CLIENTS: McpClient[] = [
+  { id: "claude", label: "Claude Code", hint: "Run in your terminal, then sign in when asked.", snippet: (u) => `claude mcp add --transport http offshoot ${u}` },
+  { id: "codex", label: "Codex", hint: "Run in your terminal, then sign in when asked.", snippet: (u) => `codex mcp add offshoot --url ${u}` },
+  { id: "gemini", label: "Gemini CLI", hint: "Run in your terminal, then sign in when asked.", snippet: (u) => `gemini mcp add --transport http offshoot ${u}` },
+  { id: "cursor", label: "Cursor", hint: "Add to ~/.cursor/mcp.json, then sign in when asked.", snippet: (u) => json("url", u) },
+  { id: "vscode", label: "VS Code", hint: "Run in your terminal, then sign in when asked.", snippet: (u) => `code --add-mcp '${JSON.stringify({ name: "offshoot", type: "http", url: u })}'` },
+  { id: "antigravity", label: "Antigravity", hint: "Add to mcp_config.json (Agent panel, MCP Servers, Manage, View raw config).", snippet: (u) => json("serverUrl", u) },
+  { id: "other", label: "Other", hint: "Add a remote (streamable HTTP) MCP server with this URL.", snippet: (u) => u },
+];
+
 /** Header pill that shows how to connect an agent to this app's MCP endpoint. */
 function McpHint() {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [clientId, setClientId] = useState(MCP_CLIENTS[0].id);
+  const client = MCP_CLIENTS.find((c) => c.id === clientId) ?? MCP_CLIENTS[0];
   const url = `${window.location.origin}/mcp`;
-  const command = `claude mcp add --transport http offshoot ${url}`;
+  const command = client.snippet(url);
   const copy = () => {
     navigator.clipboard?.writeText(command).then(
       () => {
@@ -178,14 +194,28 @@ function McpHint() {
         Add MCP server
       </button>
       {open && (
-        <div role="dialog" aria-label="Add MCP server" className="absolute right-0 top-full z-20 mt-2 w-80 rounded-2xl bg-paper p-4 text-xs text-ink-2 shadow-outline backdrop-blur-md">
+        <div role="dialog" aria-label="Add MCP server" className="absolute right-0 top-full z-20 mt-2 w-96 max-w-[calc(100vw-2rem)] rounded-2xl bg-paper p-4 text-xs text-ink-2 shadow-outline backdrop-blur-md">
           <p className="font-medium text-ink">Let an agent build skills here</p>
-          <p className="mt-1 text-mute">Run this in your terminal, then sign in when asked.</p>
-          <code className="mt-3 block break-all rounded-lg bg-ink/5 p-2.5 font-mono text-[11px] leading-relaxed text-ink">{command}</code>
+          <div role="tablist" aria-label="Client" className="mt-3 flex flex-wrap gap-1">
+            {MCP_CLIENTS.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                role="tab"
+                aria-selected={c.id === clientId}
+                onClick={() => setClientId(c.id)}
+                className={`rounded-full px-2.5 py-1 transition-colors ${c.id === clientId ? "bg-ink/10 font-medium text-ink" : "text-mute hover:text-ink"}`}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-3 text-mute">{client.hint}</p>
+          <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-ink/5 p-2.5 font-mono text-[11px] leading-relaxed text-ink">{command}</pre>
           <div className="mt-3 flex items-center justify-between gap-2">
             <span className="truncate text-mute">{url}</span>
             <button type="button" onClick={copy} className={`${chip} shrink-0 px-3 py-1.5 font-medium text-ink hover:bg-paper`}>
-              {copied ? "Copied" : "Copy command"}
+              {copied ? "Copied" : client.id === "other" ? "Copy URL" : client.id === "cursor" || client.id === "antigravity" ? "Copy config" : "Copy command"}
             </button>
           </div>
         </div>
