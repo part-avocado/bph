@@ -27,16 +27,19 @@ export async function verifyClerkToken(env: Env, token: string | null | undefine
     if (hit.exp > Date.now()) return hit.sub;
     verified.delete(token);
   }
-  const { data, errors } = await verifyToken(token, {
-    secretKey: env.CLERK_SECRET_KEY,
-    authorizedParties: authorizedParties(env),
-  });
-  const claims = data as { sub?: string; exp?: number } | undefined;
-  const sub = claims?.sub;
-  if (errors || !sub) {
-    if (errors) console.error("Clerk token rejected:", JSON.stringify(errors));
+  // verifyToken returns the claims and throws when the token is invalid.
+  let claims: { sub?: string; exp?: number };
+  try {
+    claims = await verifyToken(token, {
+      secretKey: env.CLERK_SECRET_KEY,
+      authorizedParties: authorizedParties(env),
+    });
+  } catch (err) {
+    console.error("Clerk token rejected:", err instanceof Error ? err.message : err);
     return null;
   }
+  const sub = claims.sub;
+  if (!sub) return null;
   if (claims.exp) {
     if (verified.size >= VERIFIED_MAX) verified.delete(verified.keys().next().value!);
     verified.set(token, { sub, exp: claims.exp * 1000 });
