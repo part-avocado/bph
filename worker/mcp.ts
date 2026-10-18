@@ -10,7 +10,7 @@ import { getLatestVersion, getProjectRow, getQuestions, newId, now } from "./db"
 import { GeminiError } from "./gemini";
 import { planQuestions, summarizeIdea } from "./intake";
 import { verifyMcpRequest } from "./mcp-auth";
-import { MODEL_CALL_LIMIT, PROJECT_LIMIT, answerQuestion, loadIntake, projectLimitReached, spendModelCall as reserveModelCall, startRun, toIntakeState } from "./service";
+import { CONTACT_EMAIL, PROJECT_LIMIT, answerQuestion, loadIntake, projectLimitReached, spendModelCall as reserveModelCall, startRun, toIntakeState } from "./service";
 
 const MAX_BODY_BYTES = 256 * 1024;
 const MAX_IDEA = 4000;
@@ -19,6 +19,10 @@ const MAX_PROMPT_CHARS = 60_000;
 // get_build holds the call open this long while a build runs, so agents never need a sleep of their own.
 const WAIT_MS = 25_000;
 const WAIT_STEP_MS = 2_000;
+// Questions per batch, and improve passes in dangerous mode (on top of the first build).
+const MAX_BATCH = 5;
+const MAX_AUTO_IMPROVEMENTS = 3;
+const ALL_OF_THE_ABOVE = /^(all|both) of (the above|these)\.?$/i;
 const BROWSER_ORIGINS = ["https://claude.ai"];
 
 // ---------- helpers ----------
@@ -89,7 +93,8 @@ async function guard(run: () => Promise<unknown>) {
 
 /** Reserves one model-backed call, or tells the agent the daily cap is reached. */
 async function spendModelCall(env: Env, userId: string) {
-  if (!(await reserveModelCall(env, userId))) throw new ToolError(`You've used today's ${MODEL_CALL_LIMIT} model-backed calls.`, "LIMIT_REACHED", "They refill over the next 24 hours. Tell the user; don't retry.");
+  const limited = await reserveModelCall(env, userId);
+  if (limited) throw new ToolError(limited, "LIMIT_REACHED", `Tell the user; don't retry. They can email ${CONTACT_EMAIL} for a rate-limit increase.`);
 }
 
 async function ownedProject(env: Env, id: string, userId: string) {
@@ -98,13 +103,16 @@ async function ownedProject(env: Env, id: string, userId: string) {
   return row;
 }
 
+const toOpen = (q: { id: string; prompt: string; why: string; options: string[] }) => ({ id: q.id, prompt: q.prompt, why: q.why, options: q.options });
+
 const idArg = z.string().min(1).max(64).describe("The skill id from list_skills or create_skill.");
 
 /** What the agent should do next, given where the skill is. */
-function nextStep(row: { status: string; summary: string | null; summary_confirmed: number }, intake: { complete: boolean; open: number }) {
+function nextStep(row: { status: string; summary: string | null; summary_confirmed: number; autonomous: number }, intake: { complete: boolean; open: number }) {
   if (row.status === "building") return "A build is running. Call get_build until it finishes.";
   if (row.status === "ready") return "The prompt is ready. Call get_build to read it, or start_build with improve=true to raise the score.";
   if (!row.summary_confirmed) return "Check the summary against what the user asked for. If it matches, call review_summary with no guidance (no need to ask the user). If it misses something, call review_summary with a correction, taken from the user's own request.";
+  if (intake.open && row.autonomous) return "Dangerous mode: don't ask the user. Answer every open question yourself from the request and your best judgment (pick one of the options, or write your own), in one answer_question call with `answers`. Pass no answer only when no sensible choice exists.";
   if (intake.open) return "If the user already answered this in their request, call answer_question with that. Otherwise ask the user (offer its options) and pass their reply. Pass no answer to skip it.";
   if (intake.complete) return "Intake is complete. Call start_build.";
   return "Call get_skill again to plan the questions.";
@@ -115,7 +123,7 @@ function nextStep(row: { status: string; summary: string | null; summary_confirm
 function buildServer(env: Env) {
   const server = new McpServer({ name: "reskill", version: "1.0.0" }, {
     instructions:
-      "reSkill turns an idea into a finished build prompt for a Claude Code / Codex skill. Flow: create_skill, review_summary (confirm what was understood), answer_question for each question the user should decide, start_build, get_build until done, then use the returned prompt to write the skill. You decide whether the summary is right: compare it with what the user asked for and confirm it yourself with review_summary, or send a correction as guidance. Only involve the user if their request is genuinely ambiguous. Ask the user the intake questions unless their request already answers them; answer those from what they said, and skip the rest.",
+      "reSkill turns an idea into a finished build prompt for a Claude Code / Codex skill. Flow: create_skill (dangerous=true only if the user explicitly wants a hands-off run: you then answer every question and keep improving until the score target is met, never asking them), review_summary (confirm what was understood), answer_question for each question the user should decide (answer several at once with `answers`; get_skill's batch returns several), start_build, get_build until done, then use the returned prompt to write the skill. You decide whether the summary is right: compare it with what the user asked for and confirm it yourself with review_summary, or send a correction as guidance. Only involve the user if their request is genuinely ambiguous. Ask the user the intake questions unless their request already answers them; answer those from what they said, and skip the rest.",
   });
 
   const read = { readOnlyHint: true, openWorldHint: false } as const;
@@ -146,26 +154,30 @@ function buildServer(env: Env) {
       inputSchema: {
         idea: z.string().min(3).max(MAX_IDEA).describe("What the skill should do, in plain words."),
         details: z.string().max(MAX_DETAILS).optional().describe("Optional longer context: conventions, examples, constraints the user supplied."),
+        dangerous: z
+          .boolean()
+          .optional()
+          .describe("Dangerous mode: only when the user explicitly asked for hands-off operation. You then answer the intake questions yourself and keep calling start_build with improve=true until the score target is met, never asking the user. Defaults to false."),
       },
       annotations: write,
     },
-    async ({ idea, details }, extra) =>
+    async ({ idea, details, dangerous }, extra) =>
       guard(async () => {
         const userId = userOf(extra);
         const trimmed = idea.trim();
         if (trimmed.length < 3) throw new ToolError("Describe the skill in a few words first.", "INVALID_INPUT");
-        if (await projectLimitReached(env, userId)) throw new ToolError(`You've created ${PROJECT_LIMIT} skills in the last 24 hours.`, "LIMIT_REACHED", "Reuse an existing skill from list_skills, or tell the user to try tomorrow.");
+        if (await projectLimitReached(env, userId)) throw new ToolError(`You've created ${PROJECT_LIMIT} skills in the last 24 hours.`, "LIMIT_REACHED", `Reuse an existing skill from list_skills, or tell the user to try tomorrow. They can email ${CONTACT_EMAIL} for a rate-limit increase.`);
 
         const id = newId();
         const t = now();
         const full = details?.trim() ? `${trimmed}\n\nDetails:\n${details.trim()}` : trimmed;
         // context "" means there are no attachments to digest.
         await env.DB.prepare(
-          "INSERT INTO projects (id, user_id, title, idea, context, status, created_at, updated_at) VALUES (?, ?, ?, ?, '', 'intake', ?, ?)",
+          "INSERT INTO projects (id, user_id, title, idea, context, status, autonomous, created_at, updated_at) VALUES (?, ?, ?, ?, '', 'intake', ?, ?, ?)",
         )
-          .bind(id, userId, trimmed.split(/\s+/).slice(0, 4).join(" ").slice(0, 40), full, t, t)
+          .bind(id, userId, trimmed.split(/\s+/).slice(0, 4).join(" ").slice(0, 40), full, dangerous ? 1 : 0, t, t)
           .run();
-        return { id, next: "Call get_skill to receive the summary to check." };
+        return { id, dangerous: !!dangerous, next: "Call get_skill to receive the summary to check." };
       }),
   );
 
@@ -174,11 +186,14 @@ function buildServer(env: Env) {
     {
       title: "Get a skill's state",
       description:
-        "Returns where a skill is: the summary awaiting your check, the questions (the first unanswered one is the one to ask), answers so far, and the latest score. Planning the summary or questions happens on demand here, so call it after create_skill and after confirming the summary.",
-      inputSchema: { id: idArg },
+        "Returns where a skill is: the summary awaiting your check, the questions (the first unanswered one is the one to ask; pass batch to get several at once), answers so far, and the latest score. Planning the summary or questions happens on demand here, so call it after create_skill and after confirming the summary.",
+      inputSchema: {
+        id: idArg,
+        batch: z.number().int().min(1).max(MAX_BATCH).optional().describe(`How many open questions to return in openQuestions, to answer together in one answer_question call. Defaults to 1. Later questions were planned before the earlier ones were answered, so they may overlap a little.`),
+      },
       annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
     },
-    async ({ id }, extra) =>
+    async ({ id, batch }, extra) =>
       guard(async () => {
         const userId = userOf(extra);
         let { row, questions } = await loadIntake(env.DB, id, userId);
@@ -197,7 +212,8 @@ function buildServer(env: Env) {
           }
         }
         const state = toIntakeState(row, questions);
-        const open = questions.find((q) => q.answer === null && !q.skipped);
+        const pending = questions.filter((q) => q.answer === null && !q.skipped);
+        const open = pending[0];
         const latest = await getLatestVersion(env.DB, row.id);
         return {
           id: row.id,
@@ -206,7 +222,9 @@ function buildServer(env: Env) {
           summary: state.summary,
           summaryConfirmed: state.summaryConfirmed,
           intakeComplete: state.complete,
-          openQuestion: open ? { id: open.id, prompt: open.prompt, why: open.why, options: open.options } : null,
+          openQuestion: open ? toOpen(open) : null,
+          ...((batch ?? 1) > 1 ? { openQuestions: pending.slice(0, batch).map(toOpen) } : {}),
+          dangerous: !!row.autonomous,
           answered: questions.filter((q) => q.answer || q.skipped).map((q) => ({ question: q.prompt, answer: q.skipped ? "(skipped)" : q.answer })),
           latestVersion: latest ? { version: latest.version, score: latest.score } : null,
           next: nextStep(row, { complete: state.complete, open: open ? 1 : 0 }),
@@ -252,30 +270,51 @@ function buildServer(env: Env) {
   server.registerTool(
     "answer_question",
     {
-      title: "Answer an intake question",
+      title: "Answer intake questions",
       description:
-        "Records the user's answer to the open question from get_skill and re-plans the remaining questions. Omit answer to skip (the drafter then decides). Only pass answers the user gave or clearly implied.",
+        "Records answers to open questions from get_skill and re-plans the remaining ones. Answer one (questionId + answer) or several at once with `answers` (up to " + MAX_BATCH + ", from get_skill's openQuestions) to save round trips. Omit an answer to skip it (the drafter then decides). Outside dangerous mode, only pass answers the user gave or clearly implied. Choosing \"All of the above\" records every other option.",
       inputSchema: {
         id: idArg,
-        questionId: z.string().min(1).max(64),
-        answer: z.string().max(1000).optional().describe("The user's answer, free text or one of the offered options."),
+        questionId: z.string().min(1).max(64).optional(),
+        answer: z.string().max(1000).optional().describe("The answer, free text or one of the offered options."),
+        answers: z
+          .array(z.object({ questionId: z.string().min(1).max(64), answer: z.string().max(1000).optional() }))
+          .min(1)
+          .max(MAX_BATCH)
+          .optional()
+          .describe("Several answers at once, instead of questionId and answer."),
       },
       annotations: write,
     },
-    async ({ id, questionId, answer }, extra) =>
+    async ({ id, questionId, answer, answers }, extra) =>
       guard(async () => {
         const userId = userOf(extra);
         const row = await ownedProject(env, id, userId);
         if (row.status !== "intake") throw new ToolError("This skill is past intake.", "WRONG_STEP", "Call get_build to see its build, or start_build with improve=true.");
-        const asked = (await getQuestions(env.DB, row.id)).find((q) => q.id === questionId);
-        if (!asked) throw new ToolError("That question isn't part of this skill.", "INVALID_INPUT", "Call get_skill for the current open question.");
+        if (answers && questionId) throw new ToolError("Pass either questionId or answers, not both.", "INVALID_INPUT");
+        const items = answers ?? (questionId ? [{ questionId, answer }] : []);
+        if (!items.length) throw new ToolError("Pass questionId, or answers for several questions.", "INVALID_INPUT");
+        if (new Set(items.map((i) => i.questionId)).size !== items.length) throw new ToolError("Each question can appear only once.", "INVALID_INPUT");
+        const known = await getQuestions(env.DB, row.id);
+        const asked = items.map((i) => {
+          const q = known.find((k) => k.id === i.questionId);
+          if (!q) throw new ToolError("A question isn't part of this skill.", "INVALID_INPUT", "Call get_skill for the current open questions.");
+          return { q, answer: i.answer };
+        });
+        // One model call covers the whole batch: only the last answer re-plans.
         await spendModelCall(env, userId);
-        const state = await answerQuestion(env, row, userId, { questionId, prompt: asked.prompt, answer });
+        let state!: Awaited<ReturnType<typeof answerQuestion>>;
+        for (const [i, { q, answer: given }] of asked.entries()) {
+          const text = given?.trim();
+          const full = text && ALL_OF_THE_ABOVE.test(text) ? q.options.filter((o) => !ALL_OF_THE_ABOVE.test(o.trim())).join("; ") : text;
+          state = await answerQuestion(env, row, userId, { questionId: q.id, prompt: q.prompt, answer: full, replan: i === asked.length - 1 });
+        }
         const open = state.questions.find((q) => q.answer === null && !q.skipped);
         return {
+          answered: asked.length,
           intakeComplete: state.complete,
-          openQuestion: open ? { id: open.id, prompt: open.prompt, why: open.why, options: open.options } : null,
-          next: open ? "Ask the user this question." : state.complete ? "Intake is complete. Call start_build." : "Call get_skill.",
+          openQuestion: open ? toOpen(open) : null,
+          next: open ? (row.autonomous ? "Dangerous mode: answer it yourself." : "Ask the user this question.") : state.complete ? "Intake is complete. Call start_build." : "Call get_skill.",
         };
       }),
   );
@@ -295,7 +334,7 @@ function buildServer(env: Env) {
         const row = await ownedProject(env, id, userId);
         if (row.status === "intake" && !row.summary_confirmed) throw new ToolError("The summary hasn't been confirmed.", "WRONG_STEP", "Call review_summary with no guidance, then answer the questions.");
         const res = await startRun(env, row, userId, improve);
-        if ("error" in res) throw new ToolError(res.error, res.status === 429 ? "LIMIT_REACHED" : "WRONG_STEP", res.status === 429 ? "Tell the user; the daily run limit refills over 24 hours." : undefined);
+        if ("error" in res) throw new ToolError(res.error, res.status === 429 ? "LIMIT_REACHED" : "WRONG_STEP", res.status === 429 ? `Tell the user; limits refill over time. They can email ${CONTACT_EMAIL} for a rate-limit increase.` : undefined);
         return { runId: res.runId, next: "Call get_build repeatedly until status is done. It waits for progress itself, so don't sleep or poll in a shell." };
       }),
   );
@@ -344,7 +383,13 @@ function buildServer(env: Env) {
           error: run?.error ?? null,
           version: draft?.version ?? null,
           prompt: draft ? draft.body.slice(0, MAX_PROMPT_CHARS) : null,
-          next: active ? "Still building. Call get_build again right away (it waits for progress); don't sleep." : draft ? "Build finished." : "Call start_build first.",
+          next: active
+            ? "Still building. Call get_build again right away (it waits for progress); don't sleep."
+            : draft
+              ? row.autonomous && (draft.score ?? 0) < (run?.targetScore ?? 95) && draft.version <= MAX_AUTO_IMPROVEMENTS && run?.status !== "failed"
+                ? `Dangerous mode: score ${draft.score ?? "unknown"} is below target. Call start_build with improve=true, then get_build again. Don't ask the user.`
+                : "Build finished."
+              : "Call start_build first.",
         };
       }),
   );

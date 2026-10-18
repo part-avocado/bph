@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { IntakeState, Project, Question } from "../../shared/types";
-import { Abandon, ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, Button, CheckIcon, EASE, EnterIcon, ErrorText, HintBar, Kbd, Page, SpaceIcon, Skeleton, Thinking } from "../components/ui";
+import { BtnIcons, Abandon, ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, Button, CheckIcon, EASE, EnterIcon, ErrorText, HintBar, Kbd, Page, SpaceIcon, Skeleton, Thinking } from "../components/ui";
 import type { Api } from "../lib/api";
 import { isTyping, useKeys } from "../lib/keys";
 
@@ -11,6 +11,7 @@ interface Local {
 }
 
 const SEP = "; ";
+const ALL_OF_THE_ABOVE = /^(all|both) of (the above|these)\.?$/i;
 
 function initialLocal(q: Question): Local {
   if (q.answer === null) return { choices: [], custom: "" };
@@ -139,10 +140,12 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
 
   function continueWith() {
     if (!current) return;
-    const picked = [...local.choices].sort((a, b) => a - b).map((i) => current.options[i]);
+    let picked = [...local.choices].sort((a, b) => a - b).map((i) => current.options[i]);
     const custom = local.custom.trim();
     // Nothing ticked: Enter takes the highlighted option.
     if (!picked.length && !custom && focus < current.options.length) picked.push(current.options[focus]);
+    // "All of the above" stands for the other options, so save those rather than the phrase.
+    if (picked.some((o) => ALL_OF_THE_ABOVE.test(o.trim()))) picked = current.options.filter((o) => !ALL_OF_THE_ABOVE.test(o.trim()));
     const answer = [...picked, ...(custom ? [custom] : [])].join(SEP);
     if (!answer) return customRef.current?.focus();
     submit(answer);
@@ -392,17 +395,17 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
                       className="card block w-full resize-none bg-paper px-3.5 py-3 text-base outline-none placeholder:text-faint"
                     />
                     <div className="mt-4 flex items-center justify-center gap-3">
-                      <Button type="submit" disabled={!guidance.trim()} loading={rewriting} kbd={<EnterIcon />}>
+                      <Button type="submit" disabled={!guidance.trim()} loading={rewriting} kbd={<EnterIcon />} icon={<BtnIcons.refresh />}>
                         {rewriting ? "Rewriting" : "Rewrite"}
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setCorrecting(false)} disabled={rewriting} kbd="esc">
+                      <Button variant="ghost" size="sm" onClick={() => setCorrecting(false)} disabled={rewriting} kbd="esc" icon={<BtnIcons.close />}>
                         Cancel
                       </Button>
                     </div>
                   </motion.form>
                 ) : (
                   <motion.div key="choose" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mt-7 flex items-center justify-center gap-3">
-                    <Button onClick={() => void confirmSummary()} disabled={rewriting} loading={rewriting} kbd={<EnterIcon />}>
+                    <Button onClick={() => void confirmSummary()} disabled={rewriting} loading={rewriting} kbd={<EnterIcon />} icon={<BtnIcons.check />}>
                       {rewriting ? "Getting questions" : "That's right"}
                     </Button>
                     <Button
@@ -413,6 +416,7 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
                       }}
                       disabled={rewriting}
                       kbd="N"
+                      icon={<BtnIcons.pencil />}
                     >
                       Not quite
                     </Button>
@@ -494,10 +498,10 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
               />
 
               <div className="mt-7 flex items-center justify-center gap-3">
-                <Button onClick={() => continueWith()} kbd={<EnterIcon />}>
+                <Button onClick={() => continueWith()} kbd={<EnterIcon />} icon={<BtnIcons.arrowRight />}>
                   Continue
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => submit(null)}>
+                <Button variant="ghost" size="sm" onClick={() => submit(null)} icon={<BtnIcons.skip />}>
                   Skip
                 </Button>
               </div>
@@ -539,7 +543,7 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
                 ))}
               </ul>
               <div className="mt-7 flex justify-center">
-                <Button size="lg" onClick={build} disabled={building} loading={building} kbd={<EnterIcon />}>
+                <Button size="lg" onClick={build} disabled={building} loading={building} kbd={<EnterIcon />} icon={<BtnIcons.arrowRight />}>
                   {building ? "Starting reviewers" : "Build the prompt"}
                 </Button>
               </div>

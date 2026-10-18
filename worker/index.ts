@@ -20,7 +20,7 @@ import {
 import { GeminiError } from "./gemini";
 import { isInlineMime, planQuestions, summarizeIdea } from "./intake";
 import { mcpApp } from "./mcp";
-import { MODEL_CALL_LIMIT, PROJECT_LIMIT, answerQuestion, loadIntake, projectLimitReached, spendModelCall, startRun, toIntakeState } from "./service";
+import { CONTACT_EMAIL, PROJECT_LIMIT, answerQuestion, loadIntake, projectLimitReached, spendModelCall, startRun, toIntakeState } from "./service";
 
 export { RunObject } from "./run";
 
@@ -45,7 +45,6 @@ app.onError((err, c) => {
 
 app.get("/health", (c) => c.json({ ok: true }));
 
-const modelLimitError = `You've used today's ${MODEL_CALL_LIMIT} planning steps. They refill over the next 24 hours.`;
 
 // ---- Clerk webhook: keep users in sync, delete data when a user is deleted ----
 app.post("/webhooks/clerk", async (c) => {
@@ -133,7 +132,7 @@ app.post("/projects", async (c) => {
 
   const userId = c.get("userId");
   if (await projectLimitReached(c.env, userId)) {
-    return c.json({ error: `You've created ${PROJECT_LIMIT} skills in the last 24 hours. Try again tomorrow.` }, 429);
+    return c.json({ error: `You've created ${PROJECT_LIMIT} skills in the last 24 hours. Try again tomorrow. To raise your limit, email ${CONTACT_EMAIL}.` }, 429);
   }
 
   const id = newId();
@@ -176,6 +175,7 @@ app.post("/projects", async (c) => {
     intake_complete: 0,
     summary: null,
     summary_confirmed: 0,
+    autonomous: 0,
     active_run_id: null,
     created_at: t,
     updated_at: t,
@@ -223,13 +223,19 @@ app.post("/projects/:id/plan", async (c) => {
   // Nothing is asked until the user has agreed with the model's paraphrase of the idea.
   if (!row.summary_confirmed) {
     if (!row.summary) {
-      if (!(await spendModelCall(c.env, row.user_id))) return c.json({ error: modelLimitError }, 429);
+      {
+      const limited = await spendModelCall(c.env, row.user_id);
+      if (limited) return c.json({ error: limited }, 429);
+    }
       await summarizeIdea(c.env, row);
     }
     return c.json(toIntakeState(row, questions));
   }
   if (!questions.length && !row.intake_complete) {
-    if (!(await spendModelCall(c.env, row.user_id))) return c.json({ error: modelLimitError }, 429);
+    {
+      const limited = await spendModelCall(c.env, row.user_id);
+      if (limited) return c.json({ error: limited }, 429);
+    }
     const planned = await planQuestions(c.env, row, { existing: questions });
     return c.json(toIntakeState(planned.row, planned.questions));
   }
@@ -244,7 +250,10 @@ app.post("/projects/:id/summary", async (c) => {
   const body = await c.req.json<{ guidance?: unknown }>().catch(() => null);
   const guidance = typeof body?.guidance === "string" ? body.guidance.trim().slice(0, 1000) : "";
   if (!guidance) return c.json({ error: "Tell us what to change." }, 400);
-  if (!(await spendModelCall(c.env, row.user_id))) return c.json({ error: modelLimitError }, 429);
+  {
+      const limited = await spendModelCall(c.env, row.user_id);
+      if (limited) return c.json({ error: limited }, 429);
+    }
   await summarizeIdea(c.env, row, guidance);
   return c.json(toIntakeState(row, questions));
 });
@@ -255,7 +264,10 @@ app.post("/projects/:id/summary/confirm", async (c) => {
   if (!row) return c.json({ error: "Not found" }, 404);
   if (row.status !== "intake") return c.json(toIntakeState(row, questions));
   // Checked before confirming, so hitting the cap leaves the summary unconfirmed and retryable.
-  if (!(await spendModelCall(c.env, row.user_id))) return c.json({ error: modelLimitError }, 429);
+  {
+      const limited = await spendModelCall(c.env, row.user_id);
+      if (limited) return c.json({ error: limited }, 429);
+    }
   await c.env.DB.prepare("UPDATE projects SET summary_confirmed = 1, updated_at = ? WHERE id = ?").bind(now(), row.id).run();
   row.summary_confirmed = 1;
   const planned = await planQuestions(c.env, row, { existing: questions });
@@ -275,7 +287,10 @@ app.post("/projects/:id/answers", async (c) => {
   }
   if (body.answer != null && typeof body.answer !== "string") return c.json({ error: "Answers must be text." }, 400);
   // Each answer re-plans the remaining questions, which is a model call. Without the budget the answer would not even be saved.
-  if (body.replan !== false && !(await spendModelCall(c.env, userId))) return c.json({ error: modelLimitError }, 429);
+  if (body.replan !== false) {
+    const limited = await spendModelCall(c.env, userId);
+    if (limited) return c.json({ error: limited }, 429);
+  }
   return c.json(await answerQuestion(c.env, row, userId, { ...body, questionId: body.questionId, answer: body.answer as string | null | undefined }));
 });
 

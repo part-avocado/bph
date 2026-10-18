@@ -9,6 +9,7 @@ interface __BaseEnv_Env {
 	AUTHORIZED_PARTIES: "http://localhost:5173";
 	DAILY_RUN_LIMIT: "20";
 	RUN_TOKEN_BUDGET: "400000";
+	WEEKLY_TOKEN_LIMIT: "500000";
 	GEMINI_API_KEY: string;
 	CLERK_SECRET_KEY: string;
 	CLERK_PUBLISHABLE_KEY: string;
@@ -27,7 +28,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "GEMINI_MODEL" | "GEMINI_BASE_URL" | "AUTHORIZED_PARTIES" | "DAILY_RUN_LIMIT" | "RUN_TOKEN_BUDGET" | "GEMINI_API_KEY" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_WEBHOOK_SIGNING_SECRET">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "GEMINI_MODEL" | "GEMINI_BASE_URL" | "AUTHORIZED_PARTIES" | "DAILY_RUN_LIMIT" | "RUN_TOKEN_BUDGET" | "WEEKLY_TOKEN_LIMIT" | "GEMINI_API_KEY" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_WEBHOOK_SIGNING_SECRET">> {}
 }
 declare module "*.txt" {
 	const value: string;

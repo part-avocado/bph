@@ -11,7 +11,8 @@ import {
   REFINER_SYSTEM,
   criticSystem,
 } from "./agents/prompts";
-import { newId, now } from "./db";
+import { newId, now, recordTokens } from "./db";
+import { weeklyTokenLimitMessage } from "./service";
 import { GeminiError, generate, generateStream, parseJson, userText, type GenerateResult } from "./gemini";
 
 export interface RunConfig {
@@ -96,6 +97,18 @@ export class RunObject extends DurableObject<Env> {
   private async save() {
     if (this.cancelled) return;
     await this.ctx.storage.put({ state: this.state, draft: this.draft, verdict: this.verdict });
+    await this.recordUsage();
+  }
+
+  /** Counts tokens spent since the last save toward the user's weekly cap. */
+  private async recordUsage() {
+    const s = this.state;
+    if (!s || !this.config) return;
+    const total = s.tokensIn + s.tokensOut;
+    const recorded = (await this.ctx.storage.get<number>("tokensRecorded")) ?? 0;
+    if (total <= recorded) return;
+    await recordTokens(this.env.DB, this.config.userId, total - recorded);
+    await this.ctx.storage.put("tokensRecorded", total);
   }
 
   async start(config: RunConfig) {
@@ -295,6 +308,11 @@ export class RunObject extends DurableObject<Env> {
       if (s.round === 0) s.round = 1;
       if (s.tokensIn + s.tokensOut >= s.tokenBudget) {
         await this.log("orchestrator", "token budget reached, keeping the best draft");
+        return this.finish();
+      }
+      const weekly = await weeklyTokenLimitMessage(this.env, this.config!.userId);
+      if (weekly) {
+        await this.log("orchestrator", "weekly usage limit reached, keeping the best draft");
         return this.finish();
       }
       if (this.verdict === null) await this.runJudge();

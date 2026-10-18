@@ -36,6 +36,25 @@ export const SpaceIcon = () => (
 );
 export const ArrowDownIcon = () => keyIcon("M6 2v7.5M3 6.5 6 9.5l3-3");
 
+const btnIcon = (d: string) => (
+  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
+    <path d={d} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+/** Leading icons for buttons on touch screens, where the key hints are hidden. */
+export const BtnIcons = {
+  arrowRight: () => btnIcon("M3 8h10M9 4l4 4-4 4"),
+  skip: () => btnIcon("M3 3.5 9 8l-6 4.5zM12.5 3v10"),
+  check: () => btnIcon("M3 8.5 6.5 12 13 4.5"),
+  pencil: () => btnIcon("M10.5 3.5l2 2L5.5 12.5 3 13l.5-2.5zM9 5l2 2"),
+  close: () => btnIcon("M4 4l8 8M12 4l-8 8"),
+  refresh: () => btnIcon("M13 8a5 5 0 1 1-1.5-3.5M13 2.5v3h-3"),
+  plus: () => btnIcon("M8 3v10M3 8h10"),
+  doc: () => btnIcon("M4 2.5h5l3 3v8H4zM9 2.5v3h3M6 9h4M6 11h4"),
+  send: () => btnIcon("M14 2 7 9M14 2l-4.5 12L7 9 2 6.5z"),
+};
+
 /** Inline separator between short pieces of text: an asterisk drawn around its own centre, so it sits mid-line instead of up high like the "*" glyph. */
 export const Sep = ({ size = 8 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 8 8" fill="none" className="mx-1.5 inline-block align-middle" aria-hidden>
@@ -84,6 +103,22 @@ export function Mesh({ tint = "dawn", grid = false }: { tint?: Tint; grid?: bool
 }
 
 /** Mesh, header and content: the frame every screen sits in. */
+/** Contact line at the foot of every page. */
+function Footer() {
+  const link = "hit-area transition-colors hover:text-ink pointer-coarse:py-2";
+  return (
+    <footer className="relative z-10 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-4 pb-6 pt-10 text-xs text-faint">
+      <a href="mailto:hi@partavocado.cc" className={link}>
+        hi@partavocado.cc
+      </a>
+      <span aria-hidden>·</span>
+      <a href="https://partavocado.cc" target="_blank" rel="noreferrer" className={link}>
+        partavocado.cc
+      </a>
+    </footer>
+  );
+}
+
 export function Page({
   tint,
   grid,
@@ -98,6 +133,7 @@ export function Page({
       <Mesh tint={tint} grid={grid} />
       <Header title={title} right={headerRight} />
       {children}
+      <Footer />
     </div>
   );
 }
@@ -318,11 +354,13 @@ export type ButtonProps = {
   size?: keyof typeof SIZES;
   /** Key hint shown at the end, e.g. "I" or <EnterIcon />. */
   kbd?: ReactNode;
+  /** Icon shown before the label on touch screens, where `kbd` is hidden. */
+  icon?: ReactNode;
   loading?: boolean;
   children?: ReactNode;
 } & Omit<HTMLMotionProps<"button">, "children">;
 
-export function Button({ variant = "primary", size = "md", kbd, loading = false, className = "", children, type = "button", disabled, ...rest }: ButtonProps) {
+export function Button({ variant = "primary", size = "md", kbd, icon, loading = false, className = "", children, type = "button", disabled, ...rest }: ButtonProps) {
   const dark = variant === "primary" || variant === "accent" || variant === "danger";
   return (
     <motion.button
@@ -334,6 +372,7 @@ export function Button({ variant = "primary", size = "md", kbd, loading = false,
       {...rest}
     >
       {loading && <Spinner />}
+      {icon != null && <span className="touch-icon">{icon}</span>}
       {children}
       {kbd != null && <Kbd dark={dark}>{kbd}</Kbd>}
     </motion.button>

@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { AgentState, LogLine, Project, RunState } from "../../shared/types";
-import { Abandon, Button, CheckIcon, Sep, EASE, EnterIcon, HintBar, Kbd, Page, Skeleton, Spinner, Thinking, rise } from "../components/ui";
+import { BtnIcons, Abandon, Button, CheckIcon, Sep, EASE, EnterIcon, HintBar, Kbd, Page, Skeleton, Spinner, Thinking, rise } from "../components/ui";
 import type { Api } from "../lib/api";
 import { isTyping, useKeys } from "../lib/keys";
 import { useKeyboardInset } from "../lib/useKeyboardInset";
@@ -206,7 +206,7 @@ function Drawer({ open, onClose, title, side, children }: { open: boolean; onClo
           >
             <div className="flex h-12 shrink-0 items-center justify-between border-b border-line-2 px-5">
               <h2 className="min-w-0 truncate text-base font-medium">{title}</h2>
-              <Button variant="ghost" size="xs" onClick={onClose} kbd="esc" autoFocus className="font-normal">
+              <Button variant="ghost" size="xs" onClick={onClose} kbd="esc" icon={<BtnIcons.close />} autoFocus className="font-normal">
                 Close
               </Button>
             </div>
@@ -370,7 +370,7 @@ export function Construction({ api, project, runId, onDone }: { api: Api; projec
                   {state.status === "pausing" ? "Pausing…" : paused ? "Resume" : "Pause"}
                 </Button>
               )}
-              <Button variant="accent" size="sm" onClick={() => setPanel("draft")} disabled={!draft} kbd="D">
+              <Button variant="accent" size="sm" onClick={() => setPanel("draft")} disabled={!draft} kbd="D" icon={<BtnIcons.doc />}>
                 See draft {draft ? `v${draft.version}` : ""}
               </Button>
             </div>
@@ -575,7 +575,7 @@ export function Construction({ api, project, runId, onDone }: { api: Api; projec
               className="h-9 min-w-0 flex-1 bg-transparent px-3 text-base outline-none placeholder:text-faint"
               maxLength={500}
             />
-            <Button type="submit" size="sm" kbd={<EnterIcon />}>
+            <Button type="submit" size="sm" kbd={<EnterIcon />} icon={<BtnIcons.send />}>
               Send
             </Button>
           </motion.form>

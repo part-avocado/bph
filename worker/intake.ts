@@ -1,6 +1,6 @@
 import type { Question } from "../shared/types";
 import { DIGEST_SCHEMA, DIGEST_SYSTEM, PLANNER_SCHEMA, PLANNER_SYSTEM, SUMMARY_SCHEMA, SUMMARY_SYSTEM } from "./agents/prompts";
-import { getQuestions, newId, now, projectStmt, questionsStmt, toQuestions, type ProjectRow, type QuestionRow } from "./db";
+import { getQuestions, newId, now, recordTokens, projectStmt, questionsStmt, toQuestions, type ProjectRow, type QuestionRow } from "./db";
 import { generate, parseJson, type Part } from "./gemini";
 
 const TEXT_LIMIT = 60_000;
@@ -54,6 +54,7 @@ export async function ensureDigest(env: Env, project: ProjectRow): Promise<strin
     schema: DIGEST_SCHEMA,
     thinking: "low",
   });
+  await recordTokens(env.DB, project.user_id, res.usage);
   const parsed = parseJson<{ context?: unknown }>(res.text);
   const context = typeof parsed.context === "string" ? parsed.context : "";
   await env.DB.prepare("UPDATE projects SET context = ? WHERE id = ?").bind(context, project.id).run();
@@ -84,6 +85,7 @@ export async function summarizeIdea(env: Env, project: ProjectRow, guidance?: st
       thinking: "low",
       temperature: 0.3,
     });
+    await recordTokens(env.DB, project.user_id, res.usage);
     const parsed = parseJson<{ summary?: unknown }>(res.text);
     if (typeof parsed.summary === "string" && parsed.summary.trim()) summary = parsed.summary.trim().slice(0, 800);
   } catch (err) {
@@ -140,6 +142,7 @@ export async function planQuestions(env: Env, project: ProjectRow, opts: { keepN
     thinking: "low",
     temperature: 0.4,
   });
+  await recordTokens(env.DB, project.user_id, res.usage);
   const raw = parseJson<Partial<PlannerOutput>>(res.text);
   // Structured output is usually right, but never trust its shape blindly.
   const out: PlannerOutput = {

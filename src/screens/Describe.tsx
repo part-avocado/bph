@@ -1,7 +1,7 @@
 import { useAuth, useClerk } from "@clerk/react";
 import { AnimatePresence, motion, type Variants } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Button, EASE, EnterIcon, ErrorText, Kbd, Page, Sep, ShiftIcon, chip } from "../components/ui";
+import { BtnIcons, Button, EASE, EnterIcon, ErrorText, Kbd, Page, Sep, ShiftIcon, chip } from "../components/ui";
 import { useApi } from "../lib/api";
 import { ACCEPT, filesFromDrop, formatBytes, isSupported } from "../lib/files";
 import { isMac } from "../lib/keys";
@@ -255,7 +255,7 @@ export function Describe() {
                 e.target.value = "";
               }}
             />
-            <Button type="submit" disabled={!isLoaded} loading={busy} kbd={<EnterIcon />}>
+            <Button type="submit" disabled={!isLoaded} loading={busy} kbd={<EnterIcon />} icon={<BtnIcons.arrowRight />}>
               {busy ? "Starting" : "Start"}
             </Button>
           </div>

@@ -29,14 +29,34 @@ export const PROJECT_LIMIT = 30;
 // Questions per project, answered or not; a re-plan never needs more than this.
 const MAX_QUESTION_ROWS = 20;
 
-/** Reserves one model-backed call, atomically so parallel calls can't overshoot the cap. Returns false at the cap. */
-export async function spendModelCall(env: Env, userId: string): Promise<boolean> {
+const WEEK_MS = 7 * DAY_MS;
+export const CONTACT_EMAIL = "hi@partavocado.cc";
+const contactLine = `To raise your limit, email ${CONTACT_EMAIL}.`;
+
+/** Model tokens a user has spent in the last 7 days. */
+export async function weeklyTokensUsed(env: Env, userId: string): Promise<number> {
+  const used = await env.DB.prepare("SELECT COALESCE(SUM(tokens), 0) AS n FROM token_usage WHERE user_id = ? AND created_at > ?")
+    .bind(userId, now() - WEEK_MS)
+    .first<{ n: number }>();
+  return used?.n ?? 0;
+}
+
+/** The message to show once the weekly token cap is spent, or null while there is room. */
+export async function weeklyTokenLimitMessage(env: Env, userId: string): Promise<string | null> {
+  if ((await weeklyTokensUsed(env, userId)) < Number(env.WEEKLY_TOKEN_LIMIT)) return null;
+  return `You've reached this week's usage limit. It frees up gradually over the next 7 days. ${contactLine}`;
+}
+
+/** Reserves one model-backed call, atomically so parallel calls can't overshoot the cap. Returns a message at a cap, null when allowed. */
+export async function spendModelCall(env: Env, userId: string): Promise<string | null> {
+  const weekly = await weeklyTokenLimitMessage(env, userId);
+  if (weekly) return weekly;
   const res = await env.DB.prepare(
     "INSERT INTO mcp_calls (user_id, created_at) SELECT ?1, ?2 WHERE (SELECT COUNT(*) FROM mcp_calls WHERE user_id = ?1 AND created_at > ?3) < ?4",
   )
     .bind(userId, now(), now() - DAY_MS, MODEL_CALL_LIMIT)
     .run();
-  return !!res.meta.changes;
+  return res.meta.changes ? null : `You've used today's ${MODEL_CALL_LIMIT} planning steps. They refill over the next 24 hours. ${contactLine}`;
 }
 
 export async function projectLimitReached(env: Env, userId: string): Promise<boolean> {
@@ -105,6 +125,8 @@ export async function answerQuestion(
 export async function startRun(env: Env, row: ProjectRow, userId: string, improve: boolean | undefined, feedback?: string): Promise<{ runId: string } | Failure> {
   // Everything the decision needs, fetched at once: the brief's questions and the base version
   // in one D1 batch, alongside the active run's state from its Durable Object.
+  const weekly = await weeklyTokenLimitMessage(env, userId);
+  if (weekly) return { error: weekly, status: 429 };
   const db = env.DB;
   const [[q, v], existing] = await Promise.all([
     db.batch([questionsStmt(db, row.id), ...(improve ? [latestVersionStmt(db, row.id)] : [])]),
@@ -135,7 +157,7 @@ export async function startRun(env: Env, row: ProjectRow, userId: string, improv
     .bind(runId, userId, now(), now() - DAY_MS, Number(env.DAILY_RUN_LIMIT))
     .run();
   if (!slot.meta.changes) {
-    return { error: `You've used today's ${env.DAILY_RUN_LIMIT} runs. They refill over the next 24 hours.`, status: 429 };
+    return { error: `You've used today's ${env.DAILY_RUN_LIMIT} runs. They refill over the next 24 hours. ${contactLine}`, status: 429 };
   }
   // Claim the project only if nobody else started a run since we read it (double clicks, two tabs).
   const claim = await env.DB.prepare(

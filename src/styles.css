@@ -221,6 +221,16 @@ body {
   }
 }
 
+/* Touch screens show an icon in place of the key hint. */
+.touch-icon {
+  display: none;
+}
+@media (pointer: coarse) {
+  .touch-icon {
+    display: inline-flex;
+  }
+}
+
 /* iOS Safari zooms the page when a focused field is under 16px. */
 @media (pointer: coarse) {
   input,

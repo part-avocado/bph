@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import type { ProjectDetail } from "../../shared/types";
-import { Button, CheckIcon, CmdIcon, EnterIcon, EASE, ErrorText, HintBar, Kbd, Page, rise } from "../components/ui";
+import { BtnIcons, Button, CheckIcon, CmdIcon, EnterIcon, EASE, ErrorText, HintBar, Kbd, Page, rise } from "../components/ui";
 import type { Api } from "../lib/api";
 import { isMac, isTyping, useKeys } from "../lib/keys";
 import { navigate } from "../lib/router";
@@ -176,13 +176,13 @@ export function Ready({ api, detail, onImprove }: { api: Api; detail: ProjectDet
               maxLength={1000}
               className="card mt-3 block w-full resize-none bg-paper px-3 py-2.5 text-sm outline-none placeholder:text-faint"
             />
-            <Button variant="accent" size="md" onClick={improve} disabled={improving} loading={improving} kbd="I" className="mt-3 w-full text-sm">
+            <Button variant="accent" size="md" onClick={improve} disabled={improving} loading={improving} kbd="I" icon={<BtnIcons.refresh />} className="mt-3 w-full text-sm">
               {feedback.trim() ? "Apply feedback" : "Improve again"}
             </Button>
             <AnimatePresence>{error && <ErrorText className="mt-2 justify-start text-xs">{error}</ErrorText>}</AnimatePresence>
           </section>
 
-          <Button variant="secondary" onClick={() => navigate("/")} kbd="N" className="w-full rounded-xl text-sm font-normal">
+          <Button variant="secondary" onClick={() => navigate("/")} kbd="N" icon={<BtnIcons.plus />} className="w-full rounded-xl text-sm font-normal">
             Start a new skill
           </Button>
           <Button variant="ghost" size="xs" onClick={download} className="w-full font-normal">

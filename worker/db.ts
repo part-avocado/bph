@@ -13,9 +13,17 @@ interface ProjectRow {
   intake_complete: number;
   summary: string | null;
   summary_confirmed: number;
+  autonomous: number;
   active_run_id: string | null;
   created_at: number;
   updated_at: number;
+}
+
+/** Adds model usage to the user's weekly total (the cap is checked in service.ts). */
+export async function recordTokens(db: D1Database, userId: string, usage: { tokensIn: number; tokensOut: number } | number) {
+  const tokens = typeof usage === "number" ? usage : usage.tokensIn + usage.tokensOut;
+  if (tokens <= 0) return;
+  await db.prepare("INSERT INTO token_usage (user_id, tokens, created_at) VALUES (?, ?, ?)").bind(userId, Math.round(tokens), now()).run();
 }
 
 export function toProject(r: ProjectRow): Project {
