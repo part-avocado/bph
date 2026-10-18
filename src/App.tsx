@@ -9,8 +9,10 @@ import { screen } from "./components/ui";
 // Describe is the landing page and ships in the main bundle. The signed-in
 // screens load on demand, and are prefetched once the first paint is done.
 const loadHistory = () => import("./screens/History");
+const loadUsage = () => import("./screens/Usage");
 const loadProject = () => import("./screens/ProjectScreen");
 const History = lazy(() => loadHistory().then((m) => ({ default: m.History })));
+const Usage = lazy(() => loadUsage().then((m) => ({ default: m.Usage })));
 const ProjectScreen = lazy(() => loadProject().then((m) => ({ default: m.ProjectScreen })));
 
 function usePrefetchScreens() {
@@ -42,6 +44,7 @@ export function App() {
               <Show when="signed-in">
                 <Suspense fallback={null}>
                   {route.name === "history" && <History api={api} />}
+                  {route.name === "usage" && <Usage api={api} />}
                   {route.name === "project" && <ProjectScreen api={api} id={route.id} />}
                 </Suspense>
               </Show>

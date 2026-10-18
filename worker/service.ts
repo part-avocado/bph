@@ -1,5 +1,5 @@
 // Logic shared by the web routes and the MCP tools, so limits and ownership checks behave the same on both.
-import type { IntakeState, Question } from "../shared/types";
+import type { IntakeState, Question, Usage, UsageLimit } from "../shared/types";
 import {
   buildBrief,
   getProjectRow,
@@ -57,6 +57,37 @@ export async function spendModelCall(env: Env, userId: string): Promise<string |
     .bind(userId, now(), now() - DAY_MS, MODEL_CALL_LIMIT)
     .run();
   return res.meta.changes ? null : `You've used today's ${MODEL_CALL_LIMIT} planning steps. They refill over the next 24 hours. ${contactLine}`;
+}
+
+/** Where each user stands against every cap, for the usage page. Windows roll, so `resetsAt` is when the oldest counted use expires. */
+export async function getUsage(env: Env, userId: string): Promise<Usage> {
+  const day = now() - DAY_MS;
+  const week = now() - WEEK_MS;
+  const [calls, skills, runs, tokens] = await env.DB.batch<{ n: number; oldest: number | null }>([
+    env.DB.prepare("SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM mcp_calls WHERE user_id = ? AND created_at > ?").bind(userId, day),
+    env.DB.prepare("SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM projects WHERE user_id = ? AND created_at > ?").bind(userId, day),
+    env.DB.prepare("SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM run_starts WHERE user_id = ? AND created_at > ?").bind(userId, day),
+    env.DB.prepare("SELECT COALESCE(SUM(tokens), 0) AS n, MIN(created_at) AS oldest FROM token_usage WHERE user_id = ? AND created_at > ?").bind(userId, week),
+  ]);
+  const limit = (key: UsageLimit["key"], r: D1Result<{ n: number; oldest: number | null }>, max: number, windowMs: number): UsageLimit => {
+    const row = r.results[0];
+    return {
+      key,
+      used: row?.n ?? 0,
+      limit: max,
+      windowHours: windowMs / (60 * 60 * 1000),
+      resetsAt: row?.oldest ? row.oldest + windowMs : null,
+    };
+  };
+  return {
+    limits: [
+      limit("planning", calls, MODEL_CALL_LIMIT, DAY_MS),
+      limit("skills", skills, PROJECT_LIMIT, DAY_MS),
+      limit("runs", runs, Number(env.DAILY_RUN_LIMIT), DAY_MS),
+      limit("tokens", tokens, Number(env.WEEKLY_TOKEN_LIMIT), WEEK_MS),
+    ],
+    contactEmail: CONTACT_EMAIL,
+  };
 }
 
 export async function projectLimitReached(env: Env, userId: string): Promise<boolean> {

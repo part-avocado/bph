@@ -287,6 +287,9 @@ export function Header({ title, right }: { title?: string; right?: ReactNode }) 
           <Link to="/history" className="hit-area rounded-full px-2.5 py-1.5 pointer-coarse:py-3 text-xs text-mute transition-colors hover:text-ink">
             History
           </Link>
+          <Link to="/usage" className="hit-area rounded-full px-2.5 py-1.5 pointer-coarse:py-3 text-xs text-mute transition-colors hover:text-ink">
+            Usage
+          </Link>
           {!onHome && (
             <Link to="/" className={`${chip} hidden px-3.5 py-1.5 font-medium text-ink hover:bg-paper sm:block`}>
               New

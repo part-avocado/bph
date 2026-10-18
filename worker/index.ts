@@ -20,7 +20,7 @@ import {
 import { GeminiError } from "./gemini";
 import { isInlineMime, planQuestions, summarizeIdea } from "./intake";
 import { mcpApp } from "./mcp";
-import { CONTACT_EMAIL, PROJECT_LIMIT, answerQuestion, loadIntake, projectLimitReached, spendModelCall, startRun, toIntakeState } from "./service";
+import { CONTACT_EMAIL, PROJECT_LIMIT, answerQuestion, getUsage, loadIntake, projectLimitReached, spendModelCall, startRun, toIntakeState } from "./service";
 
 export { RunObject } from "./run";
 
@@ -98,6 +98,9 @@ async function deleteUserData(env: Env, userId: string) {
 app.use("/projects/*", requireUser);
 app.use("/projects", requireUser);
 app.use("/runs/*", requireUser);
+app.use("/usage", requireUser);
+
+app.get("/usage", async (c) => c.json(await getUsage(c.env, c.get("userId"))));
 
 app.get("/projects", async (c) => {
   const { results } = await c.env.DB.prepare(

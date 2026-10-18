@@ -26,10 +26,11 @@ export function usePath() {
   return useSyncExternalStore(subscribe, () => location.pathname);
 }
 
-export type Route = { name: "describe" } | { name: "history" } | { name: "project"; id: string };
+export type Route = { name: "describe" } | { name: "history" } | { name: "usage" } | { name: "project"; id: string };
 
 export function matchRoute(path: string): Route {
   if (/^\/history\/?$/.test(path)) return { name: "history" };
+  if (/^\/usage\/?$/.test(path)) return { name: "usage" };
   const m = path.match(/^\/p\/([a-z0-9]+)\/?$/);
   if (m) return { name: "project", id: m[1] };
   return { name: "describe" };

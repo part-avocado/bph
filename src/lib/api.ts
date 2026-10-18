@@ -1,6 +1,6 @@
 import { useAuth } from "@clerk/react";
 import { useCallback, useMemo } from "react";
-import type { IntakeState, Project, ProjectDetail, ProjectStatus } from "../../shared/types";
+import type { IntakeState, Project, ProjectDetail, ProjectStatus, Usage } from "../../shared/types";
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -62,6 +62,7 @@ export function useApi() {
         for (const f of files) form.append("files", f, f.name);
         return call<{ project: Project }>("/projects", { method: "POST", body: form });
       },
+      getUsage: () => call<Usage>("/usage"),
       getProject: (id: string) => shared<ProjectDetail>(`/projects/${id}`),
       deleteProject: (id: string) => call<{ ok: true }>(`/projects/${id}`, { method: "DELETE" }),
       summarize: (id: string, guidance: string) =>

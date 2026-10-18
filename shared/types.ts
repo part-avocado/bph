@@ -111,3 +111,17 @@ export type ClientCommand =
   | { type: "resume" }
   | { type: "steer"; text: string }
   | { type: "rounds"; delta: 1 | -1 };
+
+/** One rolling limit. `resetsAt` is when the oldest counted use ages out and frees room; null while nothing is counted. */
+export interface UsageLimit {
+  key: "planning" | "skills" | "runs" | "tokens";
+  used: number;
+  limit: number;
+  windowHours: number;
+  resetsAt: number | null;
+}
+
+export interface Usage {
+  limits: UsageLimit[];
+  contactEmail: string;
+}
