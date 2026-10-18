@@ -324,7 +324,7 @@ function buildServer(env: Env) {
     {
       title: "Build the prompt",
       description:
-        "Starts the multi-agent build that drafts, critiques and refines the skill's prompt. Takes a few minutes. Use improve=true on a finished skill to push the score higher. Subject to the daily run limit.",
+        "Starts the multi-agent build that drafts, critiques and refines the skill's prompt. Takes a few minutes. Use improve=true on a finished skill to push the score higher. Subject to the weekly build limit.",
       inputSchema: { id: idArg, improve: z.boolean().optional() },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },

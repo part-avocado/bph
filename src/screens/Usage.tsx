@@ -67,7 +67,7 @@ export function Usage({ api }: { api: Api }) {
       <main className="relative z-10 mx-auto max-w-list px-4 pt-6 pb-28">
         <h1 className="text-title font-semibold tracking-display">Usage</h1>
         <p className="mt-1 text-sm text-mute">
-          What you've used and what's left. Limits roll rather than reset all at once: each use frees up a day (or a week, for tokens) after it happened.
+          What you've used and what's left. Limits roll rather than reset all at once: each use frees up a day (skills) or a week (everything else) after it happened.
         </p>
 
         <AnimatePresence>

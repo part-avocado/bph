@@ -76,6 +76,7 @@ async function cancelRuns(env: Env, runIds: string[]) {
   for (const o of outcomes) if (o.status === "rejected") console.error("run cleanup failed", o.reason);
 }
 
+/** Wipes a deleted account's content. `run_starts`, `mcp_calls` and `token_usage` hold only the user id and timestamps, and stay so the usage caps can't be reset. */
 async function deleteUserData(env: Env, userId: string) {
   const [files, runs] = await env.DB.batch([
     env.DB.prepare("SELECT a.r2_key FROM attachments a JOIN projects p ON p.id = a.project_id WHERE p.user_id = ?").bind(userId),
@@ -87,8 +88,6 @@ async function deleteUserData(env: Env, userId: string) {
   await Promise.all([...chunks, cancelRuns(env, (runs.results as { id: string }[]).map((r) => r.id))]);
   await env.DB.batch([
     env.DB.prepare("DELETE FROM runs WHERE user_id = ?").bind(userId),
-    env.DB.prepare("DELETE FROM run_starts WHERE user_id = ?").bind(userId),
-    env.DB.prepare("DELETE FROM mcp_calls WHERE user_id = ?").bind(userId),
     env.DB.prepare("DELETE FROM projects WHERE user_id = ?").bind(userId),
     env.DB.prepare("DELETE FROM users WHERE id = ?").bind(userId),
   ]);

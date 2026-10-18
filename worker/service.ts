@@ -22,10 +22,10 @@ import type { RunConfig } from "./run";
 export type Failure = { error: string; status: 400 | 404 | 409 | 429 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-// Per user, per 24 hours. Callers loop (agents, or a script against the web API), so the
-// model-backed steps and project creation are capped the same way on both surfaces.
-export const MODEL_CALL_LIMIT = 200;
-export const PROJECT_LIMIT = 30;
+// Per user: skills per 24 hours, planning steps and builds per 7 days. Callers loop (agents, or a script
+// against the web API), so the model-backed steps and project creation are capped the same way on both surfaces.
+export const MODEL_CALL_LIMIT = 100;
+export const PROJECT_LIMIT = 10;
 // Questions per project, answered or not; a re-plan never needs more than this.
 const MAX_QUESTION_ROWS = 20;
 
@@ -54,9 +54,9 @@ export async function spendModelCall(env: Env, userId: string): Promise<string |
   const res = await env.DB.prepare(
     "INSERT INTO mcp_calls (user_id, created_at) SELECT ?1, ?2 WHERE (SELECT COUNT(*) FROM mcp_calls WHERE user_id = ?1 AND created_at > ?3) < ?4",
   )
-    .bind(userId, now(), now() - DAY_MS, MODEL_CALL_LIMIT)
+    .bind(userId, now(), now() - WEEK_MS, MODEL_CALL_LIMIT)
     .run();
-  return res.meta.changes ? null : `You've used today's ${MODEL_CALL_LIMIT} planning steps. They refill over the next 24 hours. ${contactLine}`;
+  return res.meta.changes ? null : `You've used this week's ${MODEL_CALL_LIMIT} planning steps. They refill over the next 7 days. ${contactLine}`;
 }
 
 /** Where each user stands against every cap, for the usage page. Windows roll, so `resetsAt` is when the oldest counted use expires. */
@@ -64,9 +64,9 @@ export async function getUsage(env: Env, userId: string): Promise<Usage> {
   const day = now() - DAY_MS;
   const week = now() - WEEK_MS;
   const [calls, skills, runs, tokens] = await env.DB.batch<{ n: number; oldest: number | null }>([
-    env.DB.prepare("SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM mcp_calls WHERE user_id = ? AND created_at > ?").bind(userId, day),
+    env.DB.prepare("SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM mcp_calls WHERE user_id = ? AND created_at > ?").bind(userId, week),
     env.DB.prepare("SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM projects WHERE user_id = ? AND created_at > ?").bind(userId, day),
-    env.DB.prepare("SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM run_starts WHERE user_id = ? AND created_at > ?").bind(userId, day),
+    env.DB.prepare("SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM run_starts WHERE user_id = ? AND created_at > ?").bind(userId, week),
     env.DB.prepare("SELECT COALESCE(SUM(tokens), 0) AS n, MIN(created_at) AS oldest FROM token_usage WHERE user_id = ? AND created_at > ?").bind(userId, week),
   ]);
   const limit = (key: UsageLimit["key"], r: D1Result<{ n: number; oldest: number | null }>, max: number, windowMs: number): UsageLimit => {
@@ -81,9 +81,9 @@ export async function getUsage(env: Env, userId: string): Promise<Usage> {
   };
   return {
     limits: [
-      limit("planning", calls, MODEL_CALL_LIMIT, DAY_MS),
+      limit("planning", calls, MODEL_CALL_LIMIT, WEEK_MS),
       limit("skills", skills, PROJECT_LIMIT, DAY_MS),
-      limit("runs", runs, Number(env.DAILY_RUN_LIMIT), DAY_MS),
+      limit("runs", runs, Number(env.WEEKLY_RUN_LIMIT), WEEK_MS),
       limit("tokens", tokens, Number(env.WEEKLY_TOKEN_LIMIT), WEEK_MS),
     ],
     contactEmail: CONTACT_EMAIL,
@@ -180,15 +180,15 @@ export async function startRun(env: Env, row: ProjectRow, userId: string, improv
     feedback: improve ? feedback?.trim().slice(0, 1000) || undefined : undefined,
     base: base ? { id: base.id, version: base.version, body: base.body, score: base.score } : null,
   };
-  // Take a slot under the daily limit in the same statement that counts, so parallel starts
+  // Take a slot under the weekly limit in the same statement that counts, so parallel starts
   // (even for different projects) can't all pass a stale count. The run id doubles as the row id.
   const slot = await env.DB.prepare(
     "INSERT INTO run_starts (id, user_id, created_at) SELECT ?1, ?2, ?3 WHERE (SELECT COUNT(*) FROM run_starts WHERE user_id = ?2 AND created_at > ?4) < ?5",
   )
-    .bind(runId, userId, now(), now() - DAY_MS, Number(env.DAILY_RUN_LIMIT))
+    .bind(runId, userId, now(), now() - WEEK_MS, Number(env.WEEKLY_RUN_LIMIT))
     .run();
   if (!slot.meta.changes) {
-    return { error: `You've used today's ${env.DAILY_RUN_LIMIT} runs. They refill over the next 24 hours. ${contactLine}`, status: 429 };
+    return { error: `You've used this week's ${env.WEEKLY_RUN_LIMIT} builds. They refill over the next 7 days. ${contactLine}`, status: 429 };
   }
   // Claim the project only if nobody else started a run since we read it (double clicks, two tabs).
   const claim = await env.DB.prepare(

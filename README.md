@@ -23,4 +23,4 @@ To save round trips, `get_skill` takes `batch` (up to 5) to return several open 
 3. Set `CLERK_PUBLISHABLE_KEY` on the Worker (`wrangler secret put CLERK_PUBLISHABLE_KEY`, or `.dev.vars` locally). It is the same `pk_` key as `VITE_CLERK_PUBLISHABLE_KEY`.
 4. Apply the new migrations (including `0006_autonomous.sql`): `npm run db:migrate:remote`.
 
-Limits per user per 24 hours: 200 model-backed calls, 30 new skills, plus the existing daily run limit. There is also a hard weekly cap on model tokens per user (`WEEKLY_TOKEN_LIMIT` in `wrangler.jsonc`, default 500,000, counted in `token_usage`). Every limit message tells the user to email hi@partavocado.cc for an increase.
+Limits per user: 10 new skills per 24 hours, and per 7 days 100 planning steps (model-backed calls), 20 builds (`WEEKLY_RUN_LIMIT` in `wrangler.jsonc`) and 50,000 model tokens (`WEEKLY_TOKEN_LIMIT`, counted in `token_usage`). Every limit message tells the user to email hi@partavocado.cc for an increase.

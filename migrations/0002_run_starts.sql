@@ -1,4 +1,4 @@
--- Run starts outlive their project so deleting a project can't reset the daily run limit.
+-- Run starts outlive their project so deleting a project can't reset the weekly run limit.
 CREATE TABLE run_starts (
   id TEXT PRIMARY KEY,            -- run id
   user_id TEXT NOT NULL,
