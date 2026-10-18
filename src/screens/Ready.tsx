@@ -109,7 +109,7 @@ export function Ready({ api, detail, onImprove }: { api: Api; detail: ProjectDet
               tabIndex={0}
               aria-label="Generated prompt"
               aria-busy={!done}
-              className="scroll-thin max-h-[62vh] overflow-auto px-4 py-5 font-mono text-sm leading-code break-words whitespace-pre-wrap text-ink focus-visible:-outline-offset-2 sm:px-5"
+              className="scroll-thin max-h-[62dvh] overflow-auto px-4 py-5 font-mono text-sm leading-code break-words whitespace-pre-wrap text-ink focus-visible:-outline-offset-2 sm:px-5"
             >
               {visible}
               {!done && <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-ink/70" aria-hidden />}
@@ -124,7 +124,7 @@ export function Ready({ api, detail, onImprove }: { api: Api; detail: ProjectDet
           className="space-y-3 lg:pt-[92px]"
           aria-label="Actions"
         >
-          <Button size="xl" onClick={copy} className="relative w-full overflow-hidden shadow-press-lg" aria-live="polite">
+          <Button size="xl" onClick={copy} className="relative w-full overflow-hidden shadow-press-lg max-lg:hidden" aria-live="polite">
             <AnimatePresence mode="wait" initial={false}>
               <motion.span
                 key={copied ? "copied" : "copy"}
@@ -199,6 +199,32 @@ export function Ready({ api, detail, onImprove }: { api: Api; detail: ProjectDet
           </div>
         </motion.aside>
       </main>
+
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-paper/90 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-md lg:hidden">
+        <Button size="xl" onClick={copy} className="relative w-full overflow-hidden shadow-press-lg" aria-live="polite">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={copied ? "copied" : "copy"}
+                initial={{ y: 12, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: -12, opacity: 0 }}
+                transition={{ duration: 0.18 }}
+                className="flex items-center gap-2"
+              >
+                {copied ? (
+                  <>
+                    <CheckIcon />
+                    Copied
+                  </>
+                ) : (
+                  <>
+                    Copy prompt <Kbd dark>{isMac ? <CmdIcon /> : "Ctrl"}<EnterIcon /></Kbd>
+                  </>
+                )}
+              </motion.span>
+            </AnimatePresence>
+          </Button>
+      </div>
 
       <HintBar
         hints={[

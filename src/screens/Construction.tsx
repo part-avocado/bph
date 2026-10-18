@@ -4,6 +4,7 @@ import type { AgentState, LogLine, Project, RunState } from "../../shared/types"
 import { Abandon, Button, CheckIcon, Sep, EASE, EnterIcon, HintBar, Kbd, Page, Skeleton, Spinner, Thinking, rise } from "../components/ui";
 import type { Api } from "../lib/api";
 import { isTyping, useKeys } from "../lib/keys";
+import { useKeyboardInset } from "../lib/useKeyboardInset";
 import { useRun } from "../lib/useRun";
 
 const fmtTok = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
@@ -162,10 +163,11 @@ function Connectors({
     measure();
     const ro = new ResizeObserver(measure);
     if (container.current) ro.observe(container.current);
-    const id = setInterval(measure, 250); // cards animate their layout; keep lines attached
+    // Cards animate their layout; keep lines attached. The overlay is desktop-only, so skip polling on phones.
+    const id = window.matchMedia("(min-width: 1024px)").matches ? setInterval(measure, 250) : undefined;
     return () => {
       ro.disconnect();
-      clearInterval(id);
+      if (id) clearInterval(id);
     };
   }, [agents, container, from, merge, to]);
 
@@ -252,6 +254,7 @@ function LogView({ log }: { log: LogLine[] }) {
 export function Construction({ api, project, runId, onDone }: { api: Api; project: Project; runId: string; onDone: () => void }) {
   const { state, draft, log, connection, send } = useRun(runId, api.getToken);
   const [panel, setPanel] = useState<null | "draft" | "log">(null);
+  const keyboardInset = useKeyboardInset();
   const [steering, setSteering] = useState(false);
   const [steerText, setSteerText] = useState("");
   const [abandonError, setAbandonError] = useState<string | null>(null);
@@ -542,6 +545,7 @@ export function Construction({ api, project, runId, onDone }: { api: Api; projec
       <AnimatePresence>
         {steering && (
           <motion.form
+            style={{ marginBottom: keyboardInset }}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 16 }}
@@ -553,7 +557,7 @@ export function Construction({ api, project, runId, onDone }: { api: Api; projec
               setSteerText("");
               setSteering(false);
             }}
-            className="card fixed inset-x-4 bottom-6 z-30 mx-auto flex max-w-narrow items-center gap-2 p-1.5 shadow-card-lift sm:bottom-16"
+            className="card fixed inset-x-4 bottom-[max(1.5rem,env(safe-area-inset-bottom))] z-30 mx-auto flex max-w-narrow items-center gap-2 p-1.5 shadow-card-lift sm:bottom-16"
           >
             <input
               aria-label="Steer the next round"
@@ -596,7 +600,7 @@ export function Construction({ api, project, runId, onDone }: { api: Api; projec
         />
       )}
       {abandonError && (
-        <p className="fixed bottom-16 left-4 z-20 max-w-xs rounded-lg bg-paper px-3 py-2 text-xs text-bad shadow-outline sm:left-6" role="alert">
+        <p className="fixed bottom-[max(4rem,calc(env(safe-area-inset-bottom)+1rem))] left-4 z-20 max-w-xs rounded-lg bg-paper px-3 py-2 text-xs text-bad shadow-outline sm:left-6" role="alert">
           {abandonError}
         </p>
       )}

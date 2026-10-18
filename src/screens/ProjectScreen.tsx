@@ -37,7 +37,7 @@ export function ProjectScreen({ api, id }: { api: Api; id: string }) {
   if (error) {
     return (
       <Page>
-        <main className="relative z-10 mx-auto max-w-sm px-4 pt-[20vh]">
+        <main className="relative z-10 mx-auto max-w-sm px-4 pt-[20dvh]">
           <EmptyState
             title="We couldn't open this skill."
             body={error}
@@ -60,7 +60,7 @@ export function ProjectScreen({ api, id }: { api: Api; id: string }) {
       <motion.div key={view} {...screen} className="min-h-full">
         {view === "loading" && (
           <Page>
-            <main className="relative z-10 mx-auto max-w-narrow px-4 pt-[18vh]" aria-busy="true" aria-label="Loading skill">
+            <main className="relative z-10 mx-auto max-w-narrow px-4 pt-[18dvh]" aria-busy="true" aria-label="Loading skill">
               <Skeleton className="mx-auto h-9 w-4/5" />
               <Skeleton className="mx-auto mt-3 h-3.5 w-1/2" delay={80} />
               <div className="mt-8 space-y-2">

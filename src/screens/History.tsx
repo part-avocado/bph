@@ -110,7 +110,7 @@ export function History({ api }: { api: Api }) {
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0, transition: { delay: i * 0.03 } }}
                     exit={{ opacity: 0, height: 0 }}
-                    onMouseEnter={() => setFocus(i)}
+                    onPointerEnter={(e) => e.pointerType === "mouse" && setFocus(i)}
                     className={`group relative flex items-center gap-3 px-4 py-3.5 transition-colors sm:gap-4 ${focus === i ? "bg-wash" : ""}`}
                   >
                     <Link to={`/p/${p.id}`} onFocus={() => setFocus(i)} className="absolute inset-0 focus-visible:-outline-offset-2" aria-label={`Open ${p.title}`} />
@@ -144,7 +144,7 @@ export function History({ api }: { api: Api }) {
                     ) : (
                       <button
                         onClick={() => setConfirming(p.id)}
-                        className="relative z-10 shrink-0 rounded-md px-1.5 py-1 text-xs text-faint opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 hover:text-bad focus-visible:opacity-100 pointer-coarse:opacity-100"
+                        className="hit-area relative z-10 shrink-0 rounded-md px-2 py-1.5 pointer-coarse:p-3 text-xs text-faint opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 hover:text-bad focus-visible:opacity-100 pointer-coarse:opacity-100"
                         aria-label={`Delete ${p.title}`}
                       >
                         Delete

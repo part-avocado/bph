@@ -9,7 +9,7 @@ const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | un
 
 function MissingKey() {
   return (
-    <main className="mx-auto max-w-[520px] px-4 pt-[20vh]">
+    <main className="mx-auto max-w-[520px] px-4 pt-[20dvh]">
       <div className="card p-6">
         <h1 className="text-lg font-semibold tracking-heading">Clerk isn't configured</h1>
         <p className="mt-2 text-base leading-relaxed text-mute">

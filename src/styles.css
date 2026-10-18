@@ -167,6 +167,17 @@ body {
   to { transform: translate3d(3vw, 2vh, 0) scale(1.08); }
 }
 
+/* Phones: fewer, cheaper blobs so scrolling and battery hold up. */
+@media (pointer: coarse), (max-width: 640px) {
+  .mesh i {
+    filter: blur(50px);
+    will-change: auto;
+  }
+  .mesh i:nth-child(n + 4) {
+    display: none;
+  }
+}
+
 .grid-bg {
   position: fixed;
   inset: 0;
@@ -208,6 +219,25 @@ body {
   a .kbd {
     display: none;
   }
+}
+
+/* iOS Safari zooms the page when a focused field is under 16px. */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+/* Grows a small text control's click area without changing how it looks. */
+.hit-area {
+  position: relative;
+}
+.hit-area::after {
+  content: "";
+  position: absolute;
+  inset: -0.5rem -0.375rem;
 }
 
 .card {

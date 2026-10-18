@@ -446,7 +446,7 @@ export function Intake({ api, project, onBuild }: { api: Api; project: Project; 
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0, transition: { delay: 0.06 + i * 0.05 } }}
                       whileTap={{ scale: 0.99 }}
-                      onMouseEnter={() => setFocus(i)}
+                      onPointerEnter={(e) => e.pointerType === "mouse" && setFocus(i)}
                       onClick={() => {
                         setFocus(i);
                         toggle(i);

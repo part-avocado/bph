@@ -1,7 +1,7 @@
 import { Show, SignInButton, UserButton } from "@clerk/react";
 import { motion, useReducedMotion, type HTMLMotionProps } from "motion/react";
 import { useState, type AnchorHTMLAttributes, type HTMLAttributes, type MouseEvent, type ReactNode } from "react";
-import { navigate } from "../lib/router";
+import { navigate, usePath } from "../lib/router";
 import { useTheme } from "../lib/theme";
 
 /** The one easing curve every entrance uses. Mirrors --ease-out-soft in styles.css. */
@@ -141,7 +141,7 @@ export function ThemeToggle() {
       onClick={toggle}
       aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
       title={dark ? "Light mode" : "Dark mode"}
-      className="flex size-7 items-center justify-center rounded-full text-mute transition-colors hover:text-ink"
+      className="hit-area flex size-7 items-center justify-center rounded-full text-mute transition-colors hover:text-ink pointer-coarse:size-11"
     >
       {dark ? <SunIcon /> : <MoonIcon />}
     </button>
@@ -189,7 +189,7 @@ function McpHint() {
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="rounded-full px-2.5 py-1.5 text-xs text-mute transition-colors hover:text-ink"
+        className="hit-area rounded-full px-2.5 py-1.5 text-xs text-mute transition-colors hover:text-ink pointer-coarse:py-3"
       >
         Add MCP server
       </button>
@@ -225,8 +225,9 @@ function McpHint() {
 }
 
 export function Header({ title, right }: { title?: string; right?: ReactNode }) {
+  const onHome = usePath() === "/";
   return (
-    <header className="relative z-30 flex h-16 items-center justify-between gap-3 px-4 sm:px-7">
+    <header className="relative z-30 flex h-16 items-center justify-between gap-3 px-4 pt-[env(safe-area-inset-top)] sm:px-7">
       <Link
         to="/"
         className="group flex min-w-0 items-center gap-2.5 rounded-lg py-1 pr-2 text-base font-semibold tracking-snug"
@@ -247,13 +248,17 @@ export function Header({ title, right }: { title?: string; right?: ReactNode }) 
         {right}
         <ThemeToggle />
         <Show when="signed-in">
-          <Link to="/history" className="rounded-full px-2.5 py-1.5 text-xs text-mute transition-colors hover:text-ink">
+          <Link to="/history" className="hit-area rounded-full px-2.5 py-1.5 pointer-coarse:py-3 text-xs text-mute transition-colors hover:text-ink">
             History
           </Link>
-          <Link to="/" className={`${chip} hidden px-3.5 py-1.5 font-medium text-ink hover:bg-paper sm:block`}>
-            New
-          </Link>
-          <McpHint />
+          {!onHome && (
+            <Link to="/" className={`${chip} hidden px-3.5 py-1.5 font-medium text-ink hover:bg-paper sm:block`}>
+              New
+            </Link>
+          )}
+          <div className="hidden sm:block">
+            <McpHint />
+          </div>
           <div className="ml-1 flex size-7 items-center justify-center">
             <UserButton />
           </div>
@@ -298,10 +303,10 @@ const VARIANTS = {
 } as const;
 
 const SIZES = {
-  xs: "h-7 rounded-lg px-2 text-xs",
-  sm: "h-8 rounded-lg px-3 text-sm",
-  md: "h-9 rounded-control px-3.5 text-base",
-  lg: "h-10 rounded-control px-4 text-base",
+  xs: "h-7 rounded-lg px-2 text-xs pointer-coarse:h-11",
+  sm: "h-8 rounded-lg px-3 text-sm pointer-coarse:h-11",
+  md: "h-9 rounded-control px-3.5 text-base pointer-coarse:h-11",
+  lg: "h-10 rounded-control px-4 text-base pointer-coarse:h-11",
   xl: "h-11 rounded-xl px-4 text-base",
 } as const;
 
@@ -432,12 +437,12 @@ export function Abandon({ onDelete, onError }: { onDelete: () => Promise<void>; 
     }
   }
   return (
-    <div className="fixed bottom-5 left-4 z-20 flex items-center gap-1.5 text-xs sm:left-6">
+    <div className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] left-4 z-20 flex items-center gap-1.5 text-xs sm:left-6">
       {step === "idle" ? (
         <button
           type="button"
           onClick={() => setStep("ask")}
-          className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-mute transition-colors hover:bg-bad/10 hover:text-bad"
+          className="hit-area flex items-center gap-1.5 rounded-md px-3 py-2 text-mute transition-colors hover:bg-bad/10 hover:text-bad"
         >
           <TrashIcon />
           Abandon
@@ -447,10 +452,10 @@ export function Abandon({ onDelete, onError }: { onDelete: () => Promise<void>; 
           <span className="text-mute">{step === "deleting" ? "Deleting…" : "Delete this skill?"}</span>
           {step === "ask" && (
             <>
-              <button type="button" onClick={() => void confirm()} className="rounded-md px-2 py-1 font-medium text-bad transition-colors hover:bg-bad/10">
+              <button type="button" onClick={() => void confirm()} className="hit-area rounded-md px-2.5 py-1.5 pointer-coarse:px-3 pointer-coarse:py-2.5 font-medium text-bad transition-colors hover:bg-bad/10">
                 Delete
               </button>
-              <button type="button" onClick={() => setStep("idle")} className="rounded-md px-2 py-1 text-mute transition-colors hover:text-ink">
+              <button type="button" onClick={() => setStep("idle")} className="hit-area rounded-md px-2.5 py-1.5 pointer-coarse:px-3 pointer-coarse:py-2.5 text-mute transition-colors hover:text-ink">
                 Keep
               </button>
             </>
@@ -493,7 +498,7 @@ export function ErrorText({ children, onDismiss, className = "" }: { children: R
     >
       <span className="text-pretty">{children}</span>
       {onDismiss && (
-        <button onClick={onDismiss} className="shrink-0 rounded px-1 text-bad/60 transition-colors hover:text-bad" aria-label="Dismiss error">
+        <button onClick={onDismiss} className="hit-area shrink-0 rounded px-1 pointer-coarse:p-3 text-bad/60 transition-colors hover:text-bad" aria-label="Dismiss error">
           ✕
         </button>
       )}
@@ -508,10 +513,10 @@ export function Toast({ message, onClose }: { message: string; onClose: () => vo
       initial={{ opacity: 0, y: 12, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 8 }}
-      className="fixed inset-x-0 bottom-16 z-50 mx-auto flex w-fit max-w-[90vw] items-center gap-3 rounded-xl bg-ink px-4 py-2.5 text-base text-on-ink shadow-xl"
+      className="fixed inset-x-0 bottom-[max(4rem,calc(env(safe-area-inset-bottom)+1rem))] z-50 mx-auto flex w-fit max-w-[90vw] items-center gap-3 rounded-xl bg-ink px-4 py-2.5 text-base text-on-ink shadow-xl"
     >
       <span>{message}</span>
-      <button onClick={onClose} className="text-on-ink/60 hover:text-on-ink" aria-label="Dismiss">
+      <button onClick={onClose} className="hit-area text-on-ink/60 hover:text-on-ink pointer-coarse:p-3 pointer-coarse:-m-3" aria-label="Dismiss">
         ✕
       </button>
     </motion.div>

@@ -152,7 +152,7 @@ export function Describe() {
         }
       }}
     >
-      <main className="relative z-10 mx-auto flex max-w-form flex-col items-center px-4 pt-[12vh] pb-24">
+      <main className="relative z-10 mx-auto flex max-w-form flex-col items-center px-4 pt-[12dvh] pb-24">
         <Headline />
 
         <motion.form
@@ -175,7 +175,7 @@ export function Describe() {
             value={idea}
             onChange={(e) => setIdea(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && !window.matchMedia("(pointer: coarse)").matches) {
                 e.preventDefault();
                 void start();
               }
@@ -214,7 +214,7 @@ export function Describe() {
                     <button
                       type="button"
                       onClick={() => setFiles((p) => p.filter((_, j) => j !== i))}
-                      className="shrink-0 rounded px-1 text-faint transition-colors hover:bg-line hover:text-ink"
+                      className="hit-area shrink-0 rounded px-1 pointer-coarse:p-2.5 text-faint transition-colors hover:bg-line hover:text-ink"
                       aria-label={`Remove ${f.name}`}
                     >
                       ✕
@@ -229,7 +229,7 @@ export function Describe() {
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="flex min-w-0 items-center gap-2 rounded-md py-1 text-left text-xs text-mute transition-colors hover:text-ink"
+              className="hit-area flex min-w-0 items-center gap-2 rounded-md py-1.5 text-left text-xs text-mute transition-colors hover:text-ink"
             >
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="shrink-0" aria-hidden>
                 <path d="M8 11V2.5M8 2.5 4.5 6M8 2.5 11.5 6M2.5 13.5h11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
