@@ -65,13 +65,15 @@ export function Ready({ api, detail, onImprove }: { api: Api; detail: ProjectDet
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  const hasFeedback = feedback.trim().length > 0;
+
   useKeys((e) => {
     if (isTyping(e)) return;
     const mod = isMac ? e.metaKey : e.ctrlKey;
     if ((mod && e.key === "Enter") || (!mod && e.key.toLowerCase() === "c" && !e.shiftKey && !e.altKey)) {
       e.preventDefault();
       void copy();
-    } else if (e.key.toLowerCase() === "i" && !mod) {
+    } else if (!mod && !e.altKey && (hasFeedback ? e.key === "Enter" && !e.shiftKey : e.key.toLowerCase() === "r")) {
       e.preventDefault();
       void improve();
     } else if (e.key.toLowerCase() === "n" && !mod) {
@@ -166,7 +168,7 @@ export function Ready({ api, detail, onImprove }: { api: Api; detail: ProjectDet
               value={feedback}
               onChange={(e) => setFeedback(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
                   void improve();
                 } else if (e.key === "Escape") (e.target as HTMLElement).blur();
@@ -176,8 +178,8 @@ export function Ready({ api, detail, onImprove }: { api: Api; detail: ProjectDet
               maxLength={1000}
               className="card mt-3 block w-full resize-none bg-paper px-3 py-2.5 text-sm outline-none placeholder:text-faint"
             />
-            <Button variant="accent" size="md" onClick={improve} disabled={improving} loading={improving} kbd="I" icon={<BtnIcons.refresh />} className="mt-3 w-full text-sm">
-              {feedback.trim() ? "Apply feedback" : "Improve again"}
+            <Button variant="accent" size="md" onClick={improve} disabled={improving} loading={improving} kbd={hasFeedback ? <EnterIcon /> : "R"} icon={<BtnIcons.refresh />} className="mt-3 w-full text-sm">
+              {hasFeedback ? "Apply feedback" : "Improve again"}
             </Button>
             <AnimatePresence>{error && <ErrorText className="mt-2 justify-start text-xs">{error}</ErrorText>}</AnimatePresence>
           </section>
@@ -229,7 +231,7 @@ export function Ready({ api, detail, onImprove }: { api: Api; detail: ProjectDet
       <HintBar
         hints={[
           [<Kbd key="c">{isMac ? <CmdIcon /> : "Ctrl"}<EnterIcon /></Kbd>, "copy"],
-          [<Kbd key="i">I</Kbd>, "improve"],
+          [<Kbd key="r">{hasFeedback ? <EnterIcon /> : "R"}</Kbd>, "revise"],
           [<Kbd key="n">N</Kbd>, "new skill"],
         ]}
       />

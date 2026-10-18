@@ -115,6 +115,10 @@ function Footer() {
       <a href="https://partavocado.cc" target="_blank" rel="noreferrer" className={link}>
         partavocado.cc
       </a>
+      <span aria-hidden>·</span>
+      <a href="https://github.com/part-avocado/reskill" target="_blank" rel="noreferrer" className={link}>
+        github.com/part-avocado/reskill
+      </a>
     </footer>
   );
 }
